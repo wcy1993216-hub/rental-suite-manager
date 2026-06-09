@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Building2, FileSpreadsheet, Home, KeyRound, LogOut, Table2, Users } from "lucide-react";
+import { Building2, FileSpreadsheet, History, Home, KeyRound, LogOut, Table2, Users } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { ROLE_LABELS } from "@/lib/permissions";
 import type { Profile, Role } from "@/lib/types";
@@ -21,7 +21,8 @@ const navItems: NavItem[] = [
   { href: "/dashboard", label: "每月收租表", icon: <Table2 size={18} /> },
   { href: "/rooms", label: "房間管理", icon: <Building2 size={18} />, roles: ["super_admin"] },
   { href: "/import", label: "Excel 匯入", icon: <FileSpreadsheet size={18} />, roles: ["super_admin"] },
-  { href: "/users", label: "帳號權限", icon: <Users size={18} />, roles: ["super_admin"] }
+  { href: "/users", label: "帳號權限", icon: <Users size={18} />, roles: ["super_admin"] },
+  { href: "/logs", label: "操作記錄", icon: <History size={18} />, roles: ["super_admin"] }
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {

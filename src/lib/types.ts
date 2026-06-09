@@ -83,6 +83,26 @@ export interface DashboardBill extends MonthlyBill {
   contracts: ContractWithTenant | null;
 }
 
+export interface MonthlyLock {
+  bill_month: string;
+  locked_at: string;
+  locked_by: string | null;
+  note: string | null;
+}
+
+export interface AuditLog {
+  id: string;
+  actor_user_id: string | null;
+  actor_email: string | null;
+  action: string;
+  target_table: string | null;
+  target_id: string | null;
+  bill_month: string | null;
+  room_id: string | null;
+  detail: Record<string, unknown>;
+  created_at: string;
+}
+
 export interface MaintenanceRecord {
   id: string;
   room_id: string;

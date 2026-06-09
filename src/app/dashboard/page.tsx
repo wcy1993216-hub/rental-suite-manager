@@ -4,15 +4,16 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import * as XLSX from "xlsx";
-import { Banknote, Download, Eye, Landmark, RefreshCw, RotateCcw, Search, Undo2 } from "lucide-react";
+import { Banknote, Download, Eye, Landmark, Lock, RefreshCw, RotateCcw, Search, Undo2, Unlock } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { Modal } from "@/components/Modal";
 import { PaymentMethodBadge, PaymentStatusBadge } from "@/components/StatusBadge";
+import { logAuditAction } from "@/lib/audit";
 import { formatCurrency, formatDate, getCurrentMonthInputValue, monthInputToBillMonth, todayString } from "@/lib/format";
 import { canConfirmCash, canManageEverything, canRegisterBankTransfer, PAYMENT_METHOD_LABELS, PAYMENT_STATUS_LABELS } from "@/lib/permissions";
 import { getRoomBuilding } from "@/lib/rooms";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import type { ContractWithTenant, DashboardBill, PaymentMethod, PaymentStatus, RentPaymentCycle, Room, Role } from "@/lib/types";
+import type { ContractWithTenant, DashboardBill, MonthlyLock, PaymentMethod, PaymentStatus, RentPaymentCycle, Room, Role } from "@/lib/types";
 
 type StatusFilter = "all" | PaymentStatus;
 type MethodFilter = "all" | PaymentMethod;
@@ -138,6 +139,10 @@ function normalizeActiveContracts(data: unknown[] | null): ActiveContractForGene
   });
 }
 
+function isMissingTableError(error: { message?: string; code?: string } | null) {
+  return Boolean(error?.code === "42P01" || error?.message?.includes("does not exist"));
+}
+
 export default function DashboardPage() {
   return (
     <AuthGuard>
@@ -164,6 +169,7 @@ function DashboardContent({ role }: { role: Role }) {
   const [notice, setNotice] = useState("");
   const [bankBill, setBankBill] = useState<DashboardBill | null>(null);
   const [savingBillId, setSavingBillId] = useState<string | null>(null);
+  const [monthLock, setMonthLock] = useState<MonthlyLock | null>(null);
 
   const loadBills = useCallback(async () => {
     if (!supabase) return;
@@ -171,6 +177,22 @@ function DashboardContent({ role }: { role: Role }) {
     setError("");
 
     const billMonth = monthInputToBillMonth(month);
+    const { data: lockData, error: lockError } = await supabase
+      .from("monthly_locks")
+      .select("*")
+      .eq("bill_month", billMonth)
+      .maybeSingle();
+
+    const currentMonthLock = lockError && !isMissingTableError(lockError) ? null : (lockData as MonthlyLock | null);
+    setMonthLock(currentMonthLock);
+
+    if (lockError && !isMissingTableError(lockError)) {
+      setError(lockError.message);
+      setRows([]);
+      setLoading(false);
+      return;
+    }
+
     const { data, error: queryError } = await supabase
       .from("monthly_bills")
       .select("*, rooms(*), contracts(*, tenants(*))")
@@ -182,6 +204,19 @@ function DashboardContent({ role }: { role: Role }) {
     } else {
       let normalizedRows = normalizeBillRows(data as unknown[] | null);
       const existingRoomIds = new Set(normalizedRows.map((bill) => bill.room_id));
+
+      if (currentMonthLock) {
+        normalizedRows = normalizedRows.sort((a, b) => {
+          const buildingCompare = getRoomBuilding(a.rooms).localeCompare(getRoomBuilding(b.rooms), "zh-Hant");
+          if (buildingCompare !== 0) return buildingCompare;
+          return String(a.rooms?.room_number ?? "").localeCompare(String(b.rooms?.room_number ?? ""), "zh-Hant", {
+            numeric: true
+          });
+        });
+        setRows(normalizedRows);
+        setLoading(false);
+        return;
+      }
 
       const [{ data: roomData, error: roomError }, { data: activeContractData, error: activeContractError }] = await Promise.all([
         supabase
@@ -317,8 +352,74 @@ function DashboardContent({ role }: { role: Role }) {
     };
   }, [filteredRows]);
 
+  function ensureMonthUnlocked() {
+    if (!monthLock) return true;
+    setError(`${month} 已月結鎖定，請先解除月結再修改帳單。`);
+    return false;
+  }
+
+  async function lockMonth() {
+    if (!supabase || !canManageEverything(role)) return;
+    const confirmed = window.confirm(`確定將 ${month} 月結鎖定？鎖定後不能再修改本月帳單，除非先解除月結。`);
+    if (!confirmed) return;
+
+    setError("");
+    setNotice("");
+    const billMonth = monthInputToBillMonth(month);
+    const { data: userData } = await supabase.auth.getUser();
+    const { error: insertError } = await supabase.from("monthly_locks").insert({
+      bill_month: billMonth,
+      locked_by: userData.user?.id ?? null
+    });
+
+    if (insertError) {
+      setError(insertError.message);
+      return;
+    }
+
+    await logAuditAction(supabase, {
+      action: "lock_month",
+      target_table: "monthly_locks",
+      target_id: billMonth,
+      bill_month: billMonth,
+      detail: { month }
+    });
+    await loadBills();
+    setNotice(`${month} 已月結鎖定。`);
+  }
+
+  async function unlockMonth() {
+    if (!supabase || !canManageEverything(role)) return;
+    const confirmed = window.confirm(`確定解除 ${month} 月結？解除後可以再次修改本月帳單。`);
+    if (!confirmed) return;
+
+    setError("");
+    setNotice("");
+    const billMonth = monthInputToBillMonth(month);
+    const { error: deleteError } = await supabase
+      .from("monthly_locks")
+      .delete()
+      .eq("bill_month", billMonth);
+
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+
+    await logAuditAction(supabase, {
+      action: "unlock_month",
+      target_table: "monthly_locks",
+      target_id: billMonth,
+      bill_month: billMonth,
+      detail: { month }
+    });
+    await loadBills();
+    setNotice(`${month} 已解除月結。`);
+  }
+
   async function confirmCashPayment(bill: DashboardBill) {
     if (!supabase) return;
+    if (!ensureMonthUnlocked()) return;
     const { error: updateError } = await supabase
       .from("monthly_bills")
       .update({
@@ -333,11 +434,23 @@ function DashboardContent({ role }: { role: Role }) {
       return;
     }
 
+    await logAuditAction(supabase, {
+      action: "confirm_cash_payment",
+      target_table: "monthly_bills",
+      target_id: bill.id,
+      bill_month: bill.bill_month,
+      room_id: bill.room_id,
+      detail: {
+        room_number: bill.rooms?.room_number ?? null,
+        total_amount: bill.total_amount
+      }
+    });
     await loadBills();
   }
 
   async function resetPaymentStatus(bill: DashboardBill) {
     if (!supabase || !canManageEverything(role)) return;
+    if (!ensureMonthUnlocked()) return;
     const roomNumber = bill.rooms?.room_number ?? "此房號";
     const confirmed = window.confirm(`確定將 ${roomNumber} 本月收款狀態撤回為未收？繳款日、匯款後五碼與匯款金額會一起清除。`);
     if (!confirmed) return;
@@ -359,11 +472,24 @@ function DashboardContent({ role }: { role: Role }) {
       return;
     }
 
+    await logAuditAction(supabase, {
+      action: "reset_payment_status",
+      target_table: "monthly_bills",
+      target_id: bill.id,
+      bill_month: bill.bill_month,
+      room_id: bill.room_id,
+      detail: {
+        room_number: bill.rooms?.room_number ?? null,
+        previous_payment_method: bill.payment_method,
+        previous_payment_status: bill.payment_status
+      }
+    });
     await loadBills();
   }
 
   async function updateElectricityFee(bill: DashboardBill, value: string) {
     if (!supabase || !canManageEverything(role)) return;
+    if (!ensureMonthUnlocked()) return;
     const nextElectricityFee = Number(value) || 0;
     if (nextElectricityFee === Number(bill.electricity_fee ?? 0)) return;
 
@@ -384,12 +510,25 @@ function DashboardContent({ role }: { role: Role }) {
       return;
     }
 
+    await logAuditAction(supabase, {
+      action: "update_electricity_fee",
+      target_table: "monthly_bills",
+      target_id: bill.id,
+      bill_month: bill.bill_month,
+      room_id: bill.room_id,
+      detail: {
+        room_number: bill.rooms?.room_number ?? null,
+        previous_value: Number(bill.electricity_fee ?? 0),
+        next_value: nextElectricityFee
+      }
+    });
     await loadBills();
     setSavingBillId(null);
   }
 
   async function updateMiscFee(bill: DashboardBill, value: string) {
     if (!supabase || !canManageEverything(role)) return;
+    if (!ensureMonthUnlocked()) return;
     const nextMiscFee = Number(value) || 0;
     if (nextMiscFee === Number(bill.misc_fee ?? 0)) return;
 
@@ -410,12 +549,25 @@ function DashboardContent({ role }: { role: Role }) {
       return;
     }
 
+    await logAuditAction(supabase, {
+      action: "update_misc_fee",
+      target_table: "monthly_bills",
+      target_id: bill.id,
+      bill_month: bill.bill_month,
+      room_id: bill.room_id,
+      detail: {
+        room_number: bill.rooms?.room_number ?? null,
+        previous_value: Number(bill.misc_fee ?? 0),
+        next_value: nextMiscFee
+      }
+    });
     await loadBills();
     setSavingBillId(null);
   }
 
   async function generateMonthlyBills(options: { silent?: boolean } = {}) {
     if (!supabase) return;
+    if (!ensureMonthUnlocked()) return;
 
     setLoading(true);
     setError("");
@@ -474,6 +626,15 @@ function DashboardContent({ role }: { role: Role }) {
     }
 
     await loadBills();
+    await logAuditAction(supabase, {
+      action: "generate_monthly_bills",
+      target_table: "monthly_bills",
+      bill_month: billMonth,
+      detail: {
+        month,
+        inserted_count: billsToInsert.length
+      }
+    });
     if (!options.silent || billsToInsert.length > 0) {
       setNotice(`已產生 ${billsToInsert.length} 筆 ${month} 帳單；既有帳單未覆蓋。`);
     }
@@ -482,6 +643,7 @@ function DashboardContent({ role }: { role: Role }) {
 
   async function rebuildRoomMonthlyBill(row: DashboardBill) {
     if (!supabase) return;
+    if (!ensureMonthUnlocked()) return;
     const billMonth = monthInputToBillMonth(month);
     const roomNumber = row.rooms?.room_number ?? "此房號";
     const confirmed = window.confirm(
@@ -531,12 +693,23 @@ function DashboardContent({ role }: { role: Role }) {
     }
 
     await loadBills();
+    await logAuditAction(supabase, {
+      action: "update_room_bill",
+      target_table: "monthly_bills",
+      target_id: row.id,
+      bill_month: billMonth,
+      room_id: row.room_id,
+      detail: {
+        room_number: row.rooms?.room_number ?? null
+      }
+    });
     setNotice(`已更新 ${month} ${roomNumber} 帳單。`);
     setLoading(false);
   }
 
   async function clearMonthlyBills() {
     if (!supabase) return;
+    if (!ensureMonthUnlocked()) return;
     const confirmed = window.confirm(
       `確定清除 ${month} 全部帳單？這會刪除本月所有房間的帳單資料，清除後可重新按「產生本月帳單」。`
     );
@@ -561,6 +734,15 @@ function DashboardContent({ role }: { role: Role }) {
     }
 
     await loadBills();
+    await logAuditAction(supabase, {
+      action: "clear_monthly_bills",
+      target_table: "monthly_bills",
+      bill_month: billMonth,
+      detail: {
+        month,
+        deleted_count: deletedBills?.length ?? 0
+      }
+    });
     setNotice(`已清除 ${deletedBills?.length ?? 0} 筆 ${month} 帳單，可重新按「產生本月帳單」。`);
     setLoading(false);
   }
@@ -644,12 +826,23 @@ function DashboardContent({ role }: { role: Role }) {
         <div className="toolbar">
           {canManageEverything(role) ? (
             <>
-              <button className="button" type="button" onClick={() => generateMonthlyBills()} disabled={loading}>
+              <button className="button" type="button" onClick={() => generateMonthlyBills()} disabled={loading || Boolean(monthLock)}>
                 產生本月帳單
               </button>
-              <button className="secondary-button" type="button" onClick={clearMonthlyBills} disabled={loading}>
+              <button className="secondary-button" type="button" onClick={clearMonthlyBills} disabled={loading || Boolean(monthLock)}>
                 清除本月帳單
               </button>
+              {monthLock ? (
+                <button className="secondary-button" type="button" onClick={unlockMonth} disabled={loading}>
+                  <Unlock size={17} />
+                  解除月結
+                </button>
+              ) : (
+                <button className="secondary-button" type="button" onClick={lockMonth} disabled={loading}>
+                  <Lock size={17} />
+                  月結鎖定
+                </button>
+              )}
             </>
           ) : null}
           <button className="secondary-button" type="button" onClick={loadBills}>
@@ -727,6 +920,11 @@ function DashboardContent({ role }: { role: Role }) {
         <SummaryCard label="未繳間數" value={`${summary.unpaidCount} 間`} />
       </div>
 
+      {monthLock ? (
+        <div className="notice" style={{ marginBottom: 14 }}>
+          {month} 已月結鎖定，帳單不能修改；匯出對帳單仍可使用。
+        </div>
+      ) : null}
       {notice ? <div className="notice" style={{ marginBottom: 14 }}>{notice}</div> : null}
       {error ? <div className="error-box" style={{ marginBottom: 14 }}>{error}</div> : null}
 
@@ -774,7 +972,7 @@ function DashboardContent({ role }: { role: Role }) {
                         className="input table-number-input"
                         type="number"
                         defaultValue={Number(row.misc_fee ?? 0)}
-                        disabled={savingBillId === row.id}
+                        disabled={savingBillId === row.id || Boolean(monthLock)}
                         onBlur={(event) => updateMiscFee(row, event.target.value)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter") {
@@ -792,7 +990,7 @@ function DashboardContent({ role }: { role: Role }) {
                         className="input table-number-input"
                         type="number"
                         defaultValue={Number(row.electricity_fee ?? 0)}
-                        disabled={savingBillId === row.id}
+                        disabled={savingBillId === row.id || Boolean(monthLock)}
                         onBlur={(event) => updateElectricityFee(row, event.target.value)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter") {
@@ -815,22 +1013,22 @@ function DashboardContent({ role }: { role: Role }) {
                       <Link className="icon-button" href={`/rooms/${row.room_id}${currentDashboardParams ? `?return=${encodeURIComponent(`/dashboard?${currentDashboardParams}`)}` : ""}`} title="詳情">
                         <Eye size={17} />
                       </Link>
-                      {canManageEverything(role) ? (
+                      {canManageEverything(role) && !monthLock ? (
                         <button className="icon-button" type="button" onClick={() => rebuildRoomMonthlyBill(row)} title="更新">
                           <RotateCcw size={17} />
                         </button>
                       ) : null}
-                      {canRegisterBankTransfer(role) && row.payment_method !== "cash" ? (
+                      {canRegisterBankTransfer(role) && row.payment_method !== "cash" && !monthLock ? (
                         <button className="icon-button" type="button" onClick={() => setBankBill(row)} title="登記匯款">
                           <Landmark size={17} />
                         </button>
                       ) : null}
-                      {canConfirmCash(role) && row.payment_status !== "cash_paid" && row.payment_status !== "vacant" ? (
+                      {canConfirmCash(role) && row.payment_status !== "cash_paid" && row.payment_status !== "vacant" && !monthLock ? (
                         <button className="icon-button" type="button" onClick={() => confirmCashPayment(row)} title="確認收到現金">
                           <Banknote size={17} />
                         </button>
                       ) : null}
-                      {canManageEverything(role) && !["unpaid", "vacant", "rent_prepaid"].includes(row.payment_status) ? (
+                      {canManageEverything(role) && !["unpaid", "vacant", "rent_prepaid"].includes(row.payment_status) && !monthLock ? (
                         <button className="icon-button" type="button" onClick={() => resetPaymentStatus(row)} title="撤回為未收">
                           <Undo2 size={17} />
                         </button>
@@ -908,6 +1106,20 @@ function BankTransferDialog({
       return;
     }
 
+    await logAuditAction(supabase, {
+      action: "register_bank_transfer",
+      target_table: "monthly_bills",
+      target_id: bill.id,
+      bill_month: bill.bill_month,
+      room_id: bill.room_id,
+      detail: {
+        room_number: bill.rooms?.room_number ?? null,
+        payment_status: finalStatus,
+        paid_date: paidDate || null,
+        transfer_last5: last5 || null,
+        transfer_amount: Number(amount) || null
+      }
+    });
     await onSaved();
   }
 

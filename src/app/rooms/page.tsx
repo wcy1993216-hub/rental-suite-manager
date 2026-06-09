@@ -2,10 +2,11 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Eye, ListPlus, Pencil, Plus, Trash2 } from "lucide-react";
+import { Eye, ListPlus, Pencil, Plus, PowerOff, RotateCcw } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { Modal } from "@/components/Modal";
 import { RoomStatusBadge } from "@/components/StatusBadge";
+import { logAuditAction } from "@/lib/audit";
 import { inferRoomMeta } from "@/lib/rooms";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Room, RoomStatus } from "@/lib/types";
@@ -55,16 +56,33 @@ function RoomsContent() {
     void loadRooms();
   }, [loadRooms]);
 
-  async function deleteRoom(room: Room) {
+  async function toggleRoomDisabled(room: Room) {
     if (!supabase) return;
-    const confirmed = window.confirm(`確定刪除房號 ${room.room_number}？已有租約或帳單時資料庫會阻擋刪除。`);
+    const nextStatus: RoomStatus = room.status === "disabled" ? "vacant" : "disabled";
+    const actionText = nextStatus === "disabled" ? "停用" : "恢復為空房";
+    const confirmed = window.confirm(`確定將房號 ${room.room_number} ${actionText}？歷史租約、帳單與修繕記錄都會保留。`);
     if (!confirmed) return;
 
-    const { error: deleteError } = await supabase.from("rooms").delete().eq("id", room.id);
-    if (deleteError) {
-      setError(deleteError.message);
+    const { error: updateError } = await supabase
+      .from("rooms")
+      .update({ status: nextStatus })
+      .eq("id", room.id);
+    if (updateError) {
+      setError(updateError.message);
       return;
     }
+
+    await logAuditAction(supabase, {
+      action: nextStatus === "disabled" ? "disable_room" : "enable_room",
+      target_table: "rooms",
+      target_id: room.id,
+      room_id: room.id,
+      detail: {
+        room_number: room.room_number,
+        previous_status: room.status,
+        next_status: nextStatus
+      }
+    });
     await loadRooms();
   }
 
@@ -120,8 +138,13 @@ function RoomsContent() {
                       <button className="icon-button" type="button" onClick={() => setEditingRoom(room)} title="編輯">
                         <Pencil size={17} />
                       </button>
-                      <button className="icon-button" type="button" onClick={() => deleteRoom(room)} title="刪除">
-                        <Trash2 size={17} />
+                      <button
+                        className="icon-button"
+                        type="button"
+                        onClick={() => toggleRoomDisabled(room)}
+                        title={room.status === "disabled" ? "恢復空房" : "停用"}
+                      >
+                        {room.status === "disabled" ? <RotateCcw size={17} /> : <PowerOff size={17} />}
                       </button>
                     </div>
                   </td>
