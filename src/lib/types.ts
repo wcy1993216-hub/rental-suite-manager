@@ -41,6 +41,7 @@ export interface Contract {
   start_date: string | null;
   end_date: string | null;
   monthly_rent: number;
+  payment_due_day: number | null;
   rent_payment_cycle: RentPaymentCycle;
   rent_paid_until: string | null;
   cleaning_fee: number;

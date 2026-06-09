@@ -64,6 +64,7 @@ create table if not exists public.contracts (
   start_date date,
   end_date date,
   monthly_rent numeric(12, 2) not null default 0,
+  payment_due_day integer,
   rent_payment_cycle public.rent_payment_cycle not null default 'monthly',
   rent_paid_until date,
   cleaning_fee numeric(12, 2) not null default 0,
@@ -75,6 +76,16 @@ create table if not exists public.contracts (
   note text,
   created_at timestamptz not null default now()
 );
+
+alter table public.contracts
+  add column if not exists payment_due_day integer;
+
+alter table public.contracts
+  drop constraint if exists contracts_payment_due_day_check;
+
+alter table public.contracts
+  add constraint contracts_payment_due_day_check
+  check (payment_due_day is null or (payment_due_day >= 1 and payment_due_day <= 31));
 
 alter table public.contracts
   add column if not exists rent_payment_cycle public.rent_payment_cycle not null default 'monthly';

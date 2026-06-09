@@ -74,6 +74,16 @@ function isRentPrepaidForMonth(monthDate: string, contract: ContractWithTenant) 
   return contract.rent_payment_cycle !== "monthly" && Boolean(contract.rent_paid_until && contract.rent_paid_until >= monthDate);
 }
 
+function buildPaymentDueDate(billMonth: string, dueDay: number | null | undefined) {
+  if (!dueDay) return null;
+  const [yearText, monthText] = billMonth.slice(0, 7).split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const lastDay = new Date(year, month, 0).getDate();
+  const day = Math.min(Math.max(Number(dueDay), 1), lastDay);
+  return `${yearText}-${monthText}-${String(day).padStart(2, "0")}`;
+}
+
 function createVacantBillPayload(roomId: string, billMonth: string): MonthlyBillInsertPayload {
   return {
     room_id: roomId,
@@ -111,7 +121,7 @@ function createContractBillPayload(contract: ContractWithTenant, billMonth: stri
     total_amount: totalAmount,
     payment_method: "none" as PaymentMethod,
     payment_status: rentPrepaid && totalAmount === 0 ? ("rent_prepaid" as PaymentStatus) : ("unpaid" as PaymentStatus),
-    paid_date: null,
+    paid_date: buildPaymentDueDate(billMonth, contract.payment_due_day),
     note
   };
 }

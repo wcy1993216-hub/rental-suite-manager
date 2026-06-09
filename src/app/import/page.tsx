@@ -19,6 +19,7 @@ interface ImportRow {
   electricityFee: number;
   miscFee: number;
   totalAmount: number;
+  paymentDueDay: number | null;
   rentPaymentCycle: RentPaymentCycle;
   rentPaidUntil: string | null;
   hasRentPrepaidInfo: boolean;
@@ -168,6 +169,8 @@ function parseRows(sheetRows: Record<string, unknown>[], selectedMonth: string, 
         : false;
       const payment = derivePayment(statusText, transferLast5);
       const billMonth = monthInputToBillMonth(selectedMonth);
+      const paidDate = normalizeDate(pick(row, aliases.paidDate), selectedMonth);
+      const paymentDueDay = paidDate ? Number(paidDate.slice(8, 10)) : null;
       const inferredRentPaidUntil =
         explicitRentPaidUntil ||
         (rentPaymentCycle === "annual"
@@ -184,10 +187,11 @@ function parseRows(sheetRows: Record<string, unknown>[], selectedMonth: string, 
         electricityFee,
         miscFee,
         totalAmount: rentAmount + miscFee + electricityFee,
+        paymentDueDay,
         rentPaymentCycle,
         rentPaidUntil: inferredRentPaidUntil,
         hasRentPrepaidInfo,
-        paidDate: normalizeDate(pick(row, aliases.paidDate), selectedMonth),
+        paidDate,
         transferLast5,
         statusText,
         paymentMethod: payment.paymentMethod,
@@ -325,6 +329,9 @@ function ImportContent() {
       const contractUpdate: Partial<ContractWithTenant> = {
         monthly_rent: row.rentAmount || activeContract.monthly_rent
       };
+      if (row.paymentDueDay) {
+        contractUpdate.payment_due_day = row.paymentDueDay;
+      }
       if (row.hasRentPrepaidInfo) {
         contractUpdate.rent_payment_cycle = row.rentPaymentCycle;
         contractUpdate.rent_paid_until = row.rentPaidUntil;
@@ -363,6 +370,7 @@ function ImportContent() {
         start_date: monthInputToBillMonth(month),
         move_in_date: monthInputToBillMonth(month),
         monthly_rent: row.rentAmount,
+        payment_due_day: row.paymentDueDay,
         rent_payment_cycle: row.rentPaymentCycle,
         rent_paid_until: row.rentPaidUntil,
         deposit: 0,

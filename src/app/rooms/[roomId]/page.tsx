@@ -182,6 +182,8 @@ function RoomDetailContent({ role }: { role: Role }) {
                   <dd>{formatDate(activeContract.end_date)}</dd>
                   <dt>房租</dt>
                   <dd>{formatCurrency(activeContract.monthly_rent)}</dd>
+                  <dt>每月繳款日</dt>
+                  <dd>{activeContract.payment_due_day ? `每月 ${activeContract.payment_due_day} 號` : "-"}</dd>
                   <dt>清潔費</dt>
                   <dd>{Number(activeContract.cleaning_fee ?? 0) > 0 ? formatCurrency(activeContract.cleaning_fee) : "未收"}</dd>
                   <dt>車位費</dt>
@@ -357,6 +359,7 @@ function TenantEditDialog({
   const [startDate, setStartDate] = useState(contract.start_date ?? "");
   const [endDate, setEndDate] = useState(contract.end_date ?? "");
   const [monthlyRent, setMonthlyRent] = useState(String(contract.monthly_rent ?? 0));
+  const [paymentDueDay, setPaymentDueDay] = useState(String(contract.payment_due_day ?? ""));
   const [cleaningFeeEnabled, setCleaningFeeEnabled] = useState(Number(contract.cleaning_fee ?? 0) > 0);
   const [cleaningFee, setCleaningFee] = useState(String(Number(contract.cleaning_fee ?? 0) > 0 ? contract.cleaning_fee : 400));
   const [parkingFeeEnabled, setParkingFeeEnabled] = useState(Number(contract.parking_fee ?? 0) > 0);
@@ -394,6 +397,7 @@ function TenantEditDialog({
         start_date: startDate || null,
         end_date: endDate || null,
         monthly_rent: Number(monthlyRent) || 0,
+        payment_due_day: paymentDueDay ? Number(paymentDueDay) : null,
         cleaning_fee: cleaningFeeEnabled ? Number(cleaningFee) || 400 : 0,
         parking_fee: parkingFeeEnabled ? Number(parkingFee) || 0 : 0,
         rent_payment_cycle: rentPaymentCycle,
@@ -430,6 +434,8 @@ function TenantEditDialog({
             setEndDate={setEndDate}
             monthlyRent={monthlyRent}
             setMonthlyRent={setMonthlyRent}
+            paymentDueDay={paymentDueDay}
+            setPaymentDueDay={setPaymentDueDay}
             cleaningFeeEnabled={cleaningFeeEnabled}
             setCleaningFeeEnabled={setCleaningFeeEnabled}
             cleaningFee={cleaningFee}
@@ -477,6 +483,7 @@ function ChangeTenantDialog({
   const [startDate, setStartDate] = useState(todayString());
   const [endDate, setEndDate] = useState("");
   const [monthlyRent, setMonthlyRent] = useState("");
+  const [paymentDueDay, setPaymentDueDay] = useState("");
   const [cleaningFeeEnabled, setCleaningFeeEnabled] = useState(true);
   const [cleaningFee, setCleaningFee] = useState("400");
   const [parkingFeeEnabled, setParkingFeeEnabled] = useState(false);
@@ -521,6 +528,7 @@ function ChangeTenantDialog({
         end_date: endDate || null,
         move_in_date: moveInDate || null,
         monthly_rent: Number(monthlyRent) || 0,
+        payment_due_day: paymentDueDay ? Number(paymentDueDay) : null,
         cleaning_fee: cleaningFeeEnabled ? Number(cleaningFee) || 400 : 0,
         parking_fee: parkingFeeEnabled ? Number(parkingFee) || 0 : 0,
         rent_payment_cycle: rentPaymentCycle,
@@ -563,6 +571,8 @@ function ChangeTenantDialog({
             setEndDate={setEndDate}
             monthlyRent={monthlyRent}
             setMonthlyRent={setMonthlyRent}
+            paymentDueDay={paymentDueDay}
+            setPaymentDueDay={setPaymentDueDay}
             cleaningFeeEnabled={cleaningFeeEnabled}
             setCleaningFeeEnabled={setCleaningFeeEnabled}
             cleaningFee={cleaningFee}
@@ -606,6 +616,8 @@ function TenantContractForm(props: {
   setEndDate: (value: string) => void;
   monthlyRent: string;
   setMonthlyRent: (value: string) => void;
+  paymentDueDay: string;
+  setPaymentDueDay: (value: string) => void;
   cleaningFeeEnabled: boolean;
   setCleaningFeeEnabled: (value: boolean) => void;
   cleaningFee: string;
@@ -652,6 +664,19 @@ function TenantContractForm(props: {
       <div className="form-field">
         <label htmlFor="monthly-rent">房租</label>
         <input id="monthly-rent" className="input" type="number" value={props.monthlyRent} onChange={(event) => props.setMonthlyRent(event.target.value)} />
+      </div>
+      <div className="form-field">
+        <label htmlFor="payment-due-day">每月繳款日</label>
+        <input
+          id="payment-due-day"
+          className="input"
+          type="number"
+          min={1}
+          max={31}
+          value={props.paymentDueDay}
+          onChange={(event) => props.setPaymentDueDay(event.target.value)}
+          placeholder="例如 5"
+        />
       </div>
       <div className="form-field">
         <label htmlFor="cleaning-fee-enabled">清潔費</label>
