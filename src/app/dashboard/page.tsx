@@ -3,7 +3,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Banknote, Eye, Landmark, RefreshCw, RotateCcw, Search } from "lucide-react";
+import * as XLSX from "xlsx";
+import { Banknote, Download, Eye, Landmark, RefreshCw, RotateCcw, Search } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { Modal } from "@/components/Modal";
 import { PaymentMethodBadge, PaymentStatusBadge } from "@/components/StatusBadge";
@@ -528,6 +529,75 @@ function DashboardContent({ role }: { role: Role }) {
     setLoading(false);
   }
 
+  function exportMonthlyReconciliation() {
+    const sortedRows = [...rows].sort((a, b) => {
+      const buildingCompare = getRoomBuilding(a.rooms).localeCompare(getRoomBuilding(b.rooms), "zh-Hant");
+      if (buildingCompare !== 0) return buildingCompare;
+      return String(a.rooms?.room_number ?? "").localeCompare(String(b.rooms?.room_number ?? ""), "zh-Hant", { numeric: true });
+    });
+
+    const totals = sortedRows.reduce(
+      (sum, row) => {
+        const totalAmount = Number(row.total_amount ?? 0);
+        const bankAmount = row.payment_status === "bank_paid" ? Number(row.transfer_amount ?? totalAmount) : 0;
+        const cashAmount = row.payment_status === "cash_paid" ? totalAmount : 0;
+        return {
+          total: sum.total + totalAmount,
+          bank: sum.bank + bankAmount,
+          cash: sum.cash + cashAmount,
+          unpaid:
+            row.payment_status !== "vacant" && totalAmount > 0 && !["bank_paid", "cash_paid"].includes(row.payment_status)
+              ? sum.unpaid + totalAmount
+              : sum.unpaid,
+          unpaidCount:
+            row.payment_status !== "vacant" && totalAmount > 0 && !["bank_paid", "cash_paid"].includes(row.payment_status)
+              ? sum.unpaidCount + 1
+              : sum.unpaidCount
+        };
+      },
+      { total: 0, bank: 0, cash: 0, unpaid: 0, unpaidCount: 0 }
+    );
+
+    const summarySheet = XLSX.utils.aoa_to_sheet([
+      ["每月收租對帳單"],
+      ["月份", month],
+      ["匯出時間", new Date().toLocaleString("zh-TW")],
+      [],
+      ["項目", "金額/數量"],
+      ["本月應繳總額", totals.total],
+      ["已收總額", totals.bank + totals.cash],
+      ["未收總額", totals.unpaid],
+      ["匯款已收", totals.bank],
+      ["現金已收", totals.cash],
+      ["未繳間數", totals.unpaidCount],
+      ["帳單筆數", sortedRows.length]
+    ]);
+
+    const detailRows = sortedRows.map((row) => ({
+      月份: row.bill_month.slice(0, 7),
+      棟別: getRoomBuilding(row.rooms) || "未設定",
+      房號: row.rooms?.room_number ?? "",
+      租客: row.contracts?.tenants?.name ?? (row.payment_status === "vacant" || row.note === "空房" ? "未出租" : ""),
+      房租: Number(row.rent_amount ?? 0),
+      "清潔/車位": Number(row.recurring_fee ?? 0),
+      雜支: Number(row.misc_fee ?? 0),
+      電費: Number(row.electricity_fee ?? 0),
+      當月應繳總額: Number(row.total_amount ?? 0),
+      付款方式: PAYMENT_METHOD_LABELS[row.payment_method],
+      狀態: PAYMENT_STATUS_LABELS[row.payment_status],
+      繳款日: row.paid_date ?? "",
+      匯款後五碼: row.transfer_last5 ?? "",
+      匯款金額: row.transfer_amount ?? "",
+      備註: row.note ?? ""
+    }));
+
+    const detailSheet = XLSX.utils.json_to_sheet(detailRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, summarySheet, "對帳摘要");
+    XLSX.utils.book_append_sheet(workbook, detailSheet, "明細");
+    XLSX.writeFile(workbook, `套房租金對帳單-${month}.xlsx`);
+  }
+
   return (
     <>
       <div className="page-header">
@@ -549,6 +619,10 @@ function DashboardContent({ role }: { role: Role }) {
           <button className="secondary-button" type="button" onClick={loadBills}>
             <RefreshCw size={17} />
             重新整理
+          </button>
+          <button className="secondary-button" type="button" onClick={exportMonthlyReconciliation} disabled={loading || rows.length === 0}>
+            <Download size={17} />
+            匯出本月對帳單
           </button>
         </div>
       </div>
