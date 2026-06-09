@@ -683,6 +683,19 @@ function TenantContractForm(props: {
         />
       </div>
       <div className="form-field">
+        <label htmlFor="rent-payment-cycle">房租週期</label>
+        <select
+          id="rent-payment-cycle"
+          className="select"
+          value={props.rentPaymentCycle}
+          onChange={(event) => props.setRentPaymentCycle(event.target.value as RentPaymentCycle)}
+        >
+          <option value="monthly">月繳</option>
+          <option value="semiannual">半年繳</option>
+          <option value="annual">年繳</option>
+        </select>
+      </div>
+      <div className="form-field">
         <label htmlFor="cleaning-fee-enabled">清潔費</label>
         <label className="check-row" htmlFor="cleaning-fee-enabled">
           <input
@@ -721,20 +734,7 @@ function TenantContractForm(props: {
           placeholder="車位費"
         />
       </div>
-      <div className="form-field">
-        <label htmlFor="rent-payment-cycle">房租週期</label>
-        <select
-          id="rent-payment-cycle"
-          className="select"
-          value={props.rentPaymentCycle}
-          onChange={(event) => props.setRentPaymentCycle(event.target.value as RentPaymentCycle)}
-        >
-          <option value="monthly">月繳</option>
-          <option value="semiannual">半年繳</option>
-          <option value="annual">年繳</option>
-        </select>
-      </div>
-      <div className="form-field">
+      <div className="form-field full">
         <label htmlFor="rent-paid-until">預繳房租至</label>
         <input id="rent-paid-until" className="input" type="date" value={props.rentPaidUntil} onChange={(event) => props.setRentPaidUntil(event.target.value)} />
       </div>
