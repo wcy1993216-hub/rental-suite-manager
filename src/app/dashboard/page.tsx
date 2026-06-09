@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import * as XLSX from "xlsx";
-import { Banknote, Download, Eye, Landmark, RefreshCw, RotateCcw, Search } from "lucide-react";
+import { Banknote, Download, Eye, Landmark, RefreshCw, RotateCcw, Search, Undo2 } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { Modal } from "@/components/Modal";
 import { PaymentMethodBadge, PaymentStatusBadge } from "@/components/StatusBadge";
@@ -325,6 +325,32 @@ function DashboardContent({ role }: { role: Role }) {
         payment_method: "cash",
         payment_status: "cash_paid",
         paid_date: todayString()
+      })
+      .eq("id", bill.id);
+
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    await loadBills();
+  }
+
+  async function resetPaymentStatus(bill: DashboardBill) {
+    if (!supabase || !canManageEverything(role)) return;
+    const roomNumber = bill.rooms?.room_number ?? "此房號";
+    const confirmed = window.confirm(`確定將 ${roomNumber} 本月收款狀態撤回為未收？繳款日、匯款後五碼與匯款金額會一起清除。`);
+    if (!confirmed) return;
+
+    setError("");
+    const { error: updateError } = await supabase
+      .from("monthly_bills")
+      .update({
+        payment_method: "none",
+        payment_status: "unpaid",
+        paid_date: null,
+        transfer_last5: null,
+        transfer_amount: null
       })
       .eq("id", bill.id);
 
@@ -802,6 +828,11 @@ function DashboardContent({ role }: { role: Role }) {
                       {canConfirmCash(role) && row.payment_status !== "cash_paid" && row.payment_status !== "vacant" ? (
                         <button className="icon-button" type="button" onClick={() => confirmCashPayment(row)} title="確認收到現金">
                           <Banknote size={17} />
+                        </button>
+                      ) : null}
+                      {canManageEverything(role) && !["unpaid", "vacant", "rent_prepaid"].includes(row.payment_status) ? (
+                        <button className="icon-button" type="button" onClick={() => resetPaymentStatus(row)} title="撤回為未收">
+                          <Undo2 size={17} />
                         </button>
                       ) : null}
                     </div>
