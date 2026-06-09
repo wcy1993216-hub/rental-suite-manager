@@ -666,6 +666,10 @@ function TenantContractForm(props: {
         <input id="monthly-rent" className="input" type="number" value={props.monthlyRent} onChange={(event) => props.setMonthlyRent(event.target.value)} />
       </div>
       <div className="form-field">
+        <label htmlFor="deposit">押金</label>
+        <input id="deposit" className="input" type="number" value={props.deposit} onChange={(event) => props.setDeposit(event.target.value)} />
+      </div>
+      <div className="form-field">
         <label htmlFor="payment-due-day">每月繳款日</label>
         <input
           id="payment-due-day"
@@ -733,10 +737,6 @@ function TenantContractForm(props: {
       <div className="form-field">
         <label htmlFor="rent-paid-until">預繳房租至</label>
         <input id="rent-paid-until" className="input" type="date" value={props.rentPaidUntil} onChange={(event) => props.setRentPaidUntil(event.target.value)} />
-      </div>
-      <div className="form-field">
-        <label htmlFor="deposit">押金</label>
-        <input id="deposit" className="input" type="number" value={props.deposit} onChange={(event) => props.setDeposit(event.target.value)} />
       </div>
       <div className="form-field full">
         <label htmlFor="tenant-note">備註</label>
