@@ -459,7 +459,7 @@ function DashboardContent({ role }: { role: Role }) {
     const billMonth = monthInputToBillMonth(month);
     const roomNumber = row.rooms?.room_number ?? "此房號";
     const confirmed = window.confirm(
-      `確定重建 ${month} ${roomNumber} 的帳單？會刪除這一間本月原帳單，重新依目前租約產生。`
+      `確定更新 ${month} ${roomNumber} 的帳單？會刪除這一間本月原帳單，重新依目前租約產生。`
     );
     if (!confirmed) return;
 
@@ -505,7 +505,7 @@ function DashboardContent({ role }: { role: Role }) {
     }
 
     await loadBills();
-    setNotice(`已重建 ${month} ${roomNumber} 帳單。`);
+    setNotice(`已更新 ${month} ${roomNumber} 帳單。`);
     setLoading(false);
   }
 
@@ -790,7 +790,7 @@ function DashboardContent({ role }: { role: Role }) {
                         <Eye size={17} />
                       </Link>
                       {canManageEverything(role) ? (
-                        <button className="icon-button" type="button" onClick={() => rebuildRoomMonthlyBill(row)} title="重建本房本月帳單">
+                        <button className="icon-button" type="button" onClick={() => rebuildRoomMonthlyBill(row)} title="更新">
                           <RotateCcw size={17} />
                         </button>
                       ) : null}
