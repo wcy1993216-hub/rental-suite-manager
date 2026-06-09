@@ -1,0 +1,29 @@
+{
+  "name": "rental-suite-manager",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "setup:supabase": "node scripts/setup-supabase.mjs",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "latest",
+    "lucide-react": "latest",
+    "next": "latest",
+    "pg": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "xlsx": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "eslint": "latest",
+    "eslint-config-next": "latest",
+    "typescript": "latest"
+  }
+}
