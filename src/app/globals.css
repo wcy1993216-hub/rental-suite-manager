@@ -1,9 +1,10 @@
 :root {
-  --bg: #f4f5f4;
-  --surface: #ffffff;
-  --surface-muted: #f8f9f8;
-  --line: #dfe3df;
-  --line-strong: #c9cec9;
+  --bg: #efeee9;
+  --surface: #fbfaf6;
+  --surface-muted: #f3f2ed;
+  --input-bg: #fffdf8;
+  --line: #ddd9cf;
+  --line-strong: #c8c2b7;
   --text: #202521;
   --muted: #667068;
   --sidebar: #2d332f;
@@ -20,7 +21,7 @@
   --warning-weak: #fef3c7;
   --orange: #c2410c;
   --orange-weak: #ffedd5;
-  --shadow: 0 8px 24px rgba(32, 37, 33, 0.08);
+  --shadow: 0 8px 24px rgba(32, 37, 33, 0.07);
 }
 
 * {
@@ -142,7 +143,7 @@ a {
   display: grid;
   place-items: center;
   min-height: 100vh;
-  background: #eef2ef;
+  background: #e9e8e1;
 }
 
 .auth-panel {
@@ -233,7 +234,7 @@ a {
   min-width: 150px;
   padding: 8px 10px;
   color: var(--text);
-  background: #ffffff;
+  background: var(--input-bg);
   border: 1px solid var(--line-strong);
   border-radius: 6px;
   outline: none;
@@ -297,7 +298,7 @@ a {
 .link-button {
   padding: 8px 12px;
   color: var(--text);
-  background: #ffffff;
+  background: var(--input-bg);
   border-color: var(--line-strong);
 }
 
@@ -321,7 +322,7 @@ a {
   min-height: 34px;
   padding: 0;
   color: var(--text);
-  background: #ffffff;
+  background: var(--input-bg);
   border-color: var(--line-strong);
 }
 
@@ -390,13 +391,13 @@ a {
   top: 0;
   z-index: 1;
   color: #394139;
-  background: #f1f3f1;
+  background: #ecebe4;
   font-size: 12px;
   font-weight: 700;
 }
 
 .data-table tbody tr:hover {
-  background: #f8faf8;
+  background: #f4f3ed;
 }
 
 .data-table tbody tr.row-cash-paid {
@@ -510,7 +511,7 @@ a {
   min-height: 52px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--line);
-  background: #fafbfa;
+  background: #f2f1eb;
 }
 
 .panel-header h2 {
