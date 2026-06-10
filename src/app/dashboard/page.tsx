@@ -483,10 +483,43 @@ function DashboardContent({ role }: { role: Role }) {
     return params.toString();
   }, [building, keyword, method, month, status]);
 
-  const buildings = useMemo(() => {
-    const unique = new Set(rows.map((row) => getRoomBuilding(row.rooms)).filter(Boolean));
-    return Array.from(unique).sort((a, b) => String(a).localeCompare(String(b), "zh-Hant"));
+  const buildingCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    rows.forEach((row) => {
+      const name = getRoomBuilding(row.rooms);
+      if (!name) return;
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    });
+    return counts;
   }, [rows]);
+
+  const buildings = useMemo(() => {
+    return Array.from(buildingCounts.keys()).sort((a, b) => a.localeCompare(b, "zh-Hant"));
+  }, [buildingCounts]);
+
+  const totalBuildingCount = useMemo(() => {
+    return Array.from(buildingCounts.values()).reduce((sum, count) => sum + count, 0);
+  }, [buildingCounts]);
+
+  useEffect(() => {
+    if (rows.length > 0 && building !== "all" && !buildings.includes(building)) {
+      setBuilding("all");
+    }
+  }, [building, buildings, rows.length]);
+
+  const buildingFilterOptions = useMemo(() => {
+    return [
+      { value: "all", label: "全部", count: totalBuildingCount },
+      ...buildings.map((item) => ({
+        value: item,
+        label: item,
+        count: buildingCounts.get(item) ?? 0
+      }))
+    ];
+  }, [buildingCounts, buildings, totalBuildingCount]);
+
+  const shouldUseBuildingSelect = buildingFilterOptions.length > 7;
+  const buildingFieldClassName = shouldUseBuildingSelect ? "field" : "field building-field";
 
   const filteredRows = useMemo(() => {
     const loweredKeyword = keyword.trim().toLowerCase();
@@ -1130,16 +1163,38 @@ function DashboardContent({ role }: { role: Role }) {
           <input id="month" className="input" type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
         </div>
 
-        <div className="field">
-          <label htmlFor="building">棟別</label>
-          <select id="building" className="select" value={building} onChange={(event) => setBuilding(event.target.value)}>
-            <option value="all">全部棟別</option>
-            {buildings.map((item) => (
-              <option key={item} value={item ?? ""}>
-                {item}
-              </option>
-            ))}
-          </select>
+        <div className={buildingFieldClassName}>
+          <label htmlFor={shouldUseBuildingSelect ? "building" : undefined}>棟別</label>
+          {shouldUseBuildingSelect ? (
+            <select
+              id="building"
+              className="select"
+              value={building}
+              onChange={(event) => setBuilding(event.target.value)}
+              aria-label="棟別"
+            >
+              {buildingFilterOptions.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label} ({item.count})
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="segmented-control" role="group" aria-label="棟別">
+              {buildingFilterOptions.map((item) => (
+                <button
+                  key={item.value}
+                  className={`segmented-button${building === item.value ? " is-active" : ""}`}
+                  type="button"
+                  onClick={() => setBuilding(item.value)}
+                  aria-pressed={building === item.value}
+                >
+                  <span>{item.label}</span>
+                  <span className="segment-count">{item.count}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="field">

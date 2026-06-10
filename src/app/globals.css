@@ -233,6 +233,62 @@ a {
   margin-bottom: 14px;
 }
 
+.building-field {
+  min-width: 0;
+}
+
+.segmented-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 38px;
+  padding: 3px;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.segmented-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 5px 10px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.segmented-button:hover {
+  color: var(--text);
+  background: var(--input-bg);
+}
+
+.segmented-button.is-active {
+  color: #ffffff;
+  background: var(--accent);
+}
+
+.segment-count {
+  min-width: 20px;
+  padding: 1px 6px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.42);
+  border-radius: 999px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.segmented-button:not(.is-active) .segment-count {
+  background: rgba(45, 51, 47, 0.08);
+}
+
 .field,
 .form-field {
   display: grid;
@@ -398,6 +454,77 @@ a {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+.rooms-layout {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.building-nav {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.building-nav-title {
+  padding: 2px 6px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.building-filter-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 9px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+  text-align: left;
+}
+
+.building-filter-button strong {
+  min-width: 28px;
+  padding: 2px 7px;
+  color: var(--muted);
+  background: var(--surface-muted);
+  border-radius: 999px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.building-filter-button:hover {
+  background: var(--surface-muted);
+  border-color: var(--line);
+}
+
+.building-filter-button.is-active {
+  color: var(--accent);
+  background: #e8f3ed;
+  border-color: #bedbcf;
+}
+
+.building-filter-button.is-active strong {
+  color: #ffffff;
+  background: var(--accent);
+}
+
+.rooms-table-area {
+  min-width: 0;
 }
 
 .pagination-bar {

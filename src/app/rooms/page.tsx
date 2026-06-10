@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Eye, ListPlus, Pencil, Plus, PowerOff, RotateCcw } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
@@ -32,6 +32,7 @@ function RoomsContent() {
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [creating, setCreating] = useState(false);
   const [bulkCreating, setBulkCreating] = useState(false);
+  const [selectedBuilding, setSelectedBuilding] = useState("all");
   const [error, setError] = useState("");
 
   const loadRooms = useCallback(async () => {
@@ -55,6 +56,30 @@ function RoomsContent() {
   useEffect(() => {
     void loadRooms();
   }, [loadRooms]);
+
+  const buildingCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    rooms.forEach((room) => {
+      const name = room.building || "未設定";
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    });
+    return counts;
+  }, [rooms]);
+
+  const buildingOptions = useMemo(() => {
+    return Array.from(buildingCounts.entries()).sort(([a], [b]) => a.localeCompare(b, "zh-Hant"));
+  }, [buildingCounts]);
+
+  useEffect(() => {
+    if (rooms.length > 0 && selectedBuilding !== "all" && !buildingCounts.has(selectedBuilding)) {
+      setSelectedBuilding("all");
+    }
+  }, [buildingCounts, rooms.length, selectedBuilding]);
+
+  const filteredRooms = useMemo(() => {
+    if (selectedBuilding === "all") return rooms;
+    return rooms.filter((room) => (room.building || "未設定") === selectedBuilding);
+  }, [rooms, selectedBuilding]);
 
   async function toggleRoomDisabled(room: Room) {
     if (!supabase) return;
@@ -107,52 +132,83 @@ function RoomsContent() {
 
       {error ? <div className="error-box" style={{ marginBottom: 14 }}>{error}</div> : null}
 
-      <div className="table-shell">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>棟別</th>
-              <th>房號</th>
-              <th>狀態</th>
-              <th>備註</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rooms.length === 0 ? (
+      <div className="rooms-layout">
+        <aside className="building-nav" aria-label="棟別篩選">
+          <div className="building-nav-title">棟別</div>
+          <button
+            className={`building-filter-button${selectedBuilding === "all" ? " is-active" : ""}`}
+            type="button"
+            onClick={() => setSelectedBuilding("all")}
+            aria-pressed={selectedBuilding === "all"}
+          >
+            <span>全部</span>
+            <strong>{rooms.length}</strong>
+          </button>
+          {buildingOptions.map(([name, count]) => (
+            <button
+              key={name}
+              className={`building-filter-button${selectedBuilding === name ? " is-active" : ""}`}
+              type="button"
+              onClick={() => setSelectedBuilding(name)}
+              aria-pressed={selectedBuilding === name}
+            >
+              <span>{name}</span>
+              <strong>{count}</strong>
+            </button>
+          ))}
+        </aside>
+
+        <div className="rooms-table-area table-shell">
+          <table className="data-table">
+            <thead>
               <tr>
-                <td colSpan={5}>尚無房間資料。</td>
+                <th>棟別</th>
+                <th>房號</th>
+                <th>狀態</th>
+                <th>備註</th>
+                <th>操作</th>
               </tr>
-            ) : (
-              rooms.map((room) => (
-                <tr key={room.id}>
-                  <td>{room.building || "-"}</td>
-                  <td><strong>{room.room_number}</strong></td>
-                  <td><RoomStatusBadge status={room.status} /></td>
-                  <td>{room.note || "-"}</td>
-                  <td>
-                    <div className="toolbar">
-                      <Link className="icon-button" href={`/rooms/${room.id}`} title="詳情">
-                        <Eye size={17} />
-                      </Link>
-                      <button className="icon-button" type="button" onClick={() => setEditingRoom(room)} title="編輯">
-                        <Pencil size={17} />
-                      </button>
-                      <button
-                        className="icon-button"
-                        type="button"
-                        onClick={() => toggleRoomDisabled(room)}
-                        title={room.status === "disabled" ? "恢復空房" : "停用"}
-                      >
-                        {room.status === "disabled" ? <RotateCcw size={17} /> : <PowerOff size={17} />}
-                      </button>
-                    </div>
-                  </td>
+            </thead>
+            <tbody>
+              {rooms.length === 0 ? (
+                <tr>
+                  <td colSpan={5}>尚無房間資料。</td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : filteredRooms.length === 0 ? (
+                <tr>
+                  <td colSpan={5}>這個棟別目前沒有房間。</td>
+                </tr>
+              ) : (
+                filteredRooms.map((room) => (
+                  <tr key={room.id}>
+                    <td>{room.building || "-"}</td>
+                    <td><strong>{room.room_number}</strong></td>
+                    <td><RoomStatusBadge status={room.status} /></td>
+                    <td>{room.note || "-"}</td>
+                    <td>
+                      <div className="toolbar">
+                        <Link className="icon-button" href={`/rooms/${room.id}`} title="詳情">
+                          <Eye size={17} />
+                        </Link>
+                        <button className="icon-button" type="button" onClick={() => setEditingRoom(room)} title="編輯">
+                          <Pencil size={17} />
+                        </button>
+                        <button
+                          className="icon-button"
+                          type="button"
+                          onClick={() => toggleRoomDisabled(room)}
+                          title={room.status === "disabled" ? "恢復空房" : "停用"}
+                        >
+                          {room.status === "disabled" ? <RotateCcw size={17} /> : <PowerOff size={17} />}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {creating ? (
