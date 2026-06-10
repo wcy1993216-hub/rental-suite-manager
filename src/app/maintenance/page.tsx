@@ -2,12 +2,13 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Pencil, RefreshCw } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Pencil, RefreshCw, Search, X } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { Modal } from "@/components/Modal";
 import { MaintenanceStatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { logAuditAction } from "@/lib/audit";
+import { getRoomBuilding } from "@/lib/rooms";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { ContractWithTenant, MaintenanceRecord, MaintenanceStatus, Room } from "@/lib/types";
 
@@ -33,6 +34,8 @@ interface MaintenanceRow extends MaintenanceRecord {
   rooms: Room | null;
   contracts: ContractWithTenant | null;
 }
+
+type RoomFilterOption = Pick<Room, "id" | "building" | "room_number">;
 
 function normalizeMaintenanceRows(data: unknown[] | null): MaintenanceRow[] {
   return (data ?? []).map((item) => {
@@ -70,7 +73,10 @@ export default function MaintenancePage() {
 function MaintenanceContent() {
   const supabase = getSupabaseBrowserClient();
   const [records, setRecords] = useState<MaintenanceRow[]>([]);
+  const [roomFilters, setRoomFilters] = useState<RoomFilterOption[]>([]);
   const [statusFilter, setStatusFilter] = useState<MaintenanceFilter>("open");
+  const [buildingFilter, setBuildingFilter] = useState("all");
+  const [roomKeyword, setRoomKeyword] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
@@ -82,10 +88,59 @@ function MaintenanceContent() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
+  const loadRoomFilters = useCallback(async () => {
+    if (!supabase) return;
+
+    const { data, error: queryError } = await supabase
+      .from("rooms")
+      .select("id, building, room_number")
+      .order("building")
+      .order("room_number", { ascending: true });
+
+    if (queryError) {
+      setError(queryError.message);
+      setRoomFilters([]);
+      return;
+    }
+
+    setRoomFilters((data ?? []) as RoomFilterOption[]);
+  }, [supabase]);
+
+  const buildingOptions = useMemo(() => {
+    return Array.from(new Set(
+      roomFilters.map((room) => getRoomBuilding(room) || "未設定")
+    )).sort((a, b) => a.localeCompare(b, "zh-Hant"));
+  }, [roomFilters]);
+
+  const matchingRoomIds = useMemo(() => {
+    const normalizedKeyword = roomKeyword.trim().toLowerCase();
+    const hasBuildingFilter = buildingFilter !== "all";
+    const hasRoomKeyword = normalizedKeyword.length > 0;
+
+    if (!hasBuildingFilter && !hasRoomKeyword) return null;
+
+    return roomFilters
+      .filter((room) => {
+        const buildingName = getRoomBuilding(room) || "未設定";
+        const matchesBuilding = !hasBuildingFilter || buildingName === buildingFilter;
+        const matchesKeyword = !hasRoomKeyword || room.room_number.toLowerCase().includes(normalizedKeyword);
+        return matchesBuilding && matchesKeyword;
+      })
+      .map((room) => room.id);
+  }, [buildingFilter, roomFilters, roomKeyword]);
+
   const loadRecords = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
     setError("");
+
+    if (matchingRoomIds && matchingRoomIds.length === 0) {
+      setRecords([]);
+      setTotalCount(0);
+      setLastSyncedAt(formatTimestamp(new Date().toISOString()));
+      setLoading(false);
+      return;
+    }
 
     let query = supabase
       .from("maintenance_records")
@@ -96,6 +151,10 @@ function MaintenanceContent() {
       query = query.in("status", ["pending", "processing"]);
     } else if (statusFilter !== "all") {
       query = query.eq("status", statusFilter);
+    }
+
+    if (matchingRoomIds) {
+      query = query.in("room_id", matchingRoomIds);
     }
 
     const from = (currentPage - 1) * PAGE_SIZE;
@@ -114,7 +173,7 @@ function MaintenanceContent() {
     setTotalCount(count ?? 0);
     setLastSyncedAt(formatTimestamp(new Date().toISOString()));
     setLoading(false);
-  }, [currentPage, statusFilter, supabase]);
+  }, [currentPage, matchingRoomIds, statusFilter, supabase]);
 
   const loadStats = useCallback(async () => {
     if (!supabase) return;
@@ -131,6 +190,10 @@ function MaintenanceContent() {
     setProcessingCount(processingResult.count ?? 0);
     setMonthCreatedCount(monthCreatedResult.count ?? 0);
   }, [supabase]);
+
+  useEffect(() => {
+    void loadRoomFilters();
+  }, [loadRoomFilters]);
 
   useEffect(() => {
     void loadRecords();
@@ -156,10 +219,25 @@ function MaintenanceContent() {
     }
   }, [currentPage, totalPages]);
 
+  useEffect(() => {
+    if (buildingFilter !== "all" && !buildingOptions.includes(buildingFilter)) {
+      setBuildingFilter("all");
+    }
+  }, [buildingFilter, buildingOptions]);
+
   const totalText = useMemo(() => {
     if (totalCount === 0) return "共 0 筆";
     return `第 ${startItem}-${endItem} 筆，共 ${totalCount} 筆`;
   }, [endItem, startItem, totalCount]);
+
+  const hasActiveFilters = statusFilter !== "open" || buildingFilter !== "all" || roomKeyword.trim() !== "";
+
+  function clearFilters() {
+    setStatusFilter("open");
+    setBuildingFilter("all");
+    setRoomKeyword("");
+    setCurrentPage(1);
+  }
 
   async function markCompleted(record: MaintenanceRow) {
     if (!supabase || record.status === "completed") return;
@@ -209,6 +287,7 @@ function MaintenanceContent() {
             className="secondary-button"
             type="button"
             onClick={() => {
+              void loadRoomFilters();
               void loadRecords();
               void loadStats();
             }}
@@ -254,6 +333,45 @@ function MaintenanceContent() {
             ))}
           </select>
         </div>
+        <div className="field">
+          <label htmlFor="maintenance-building">棟別</label>
+          <select
+            id="maintenance-building"
+            className="select"
+            value={buildingFilter}
+            onChange={(event) => {
+              setBuildingFilter(event.target.value);
+              setCurrentPage(1);
+            }}
+          >
+            <option value="all">全部棟別</option>
+            {buildingOptions.map((building) => (
+              <option key={building} value={building}>
+                {building}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field search-field">
+          <label htmlFor="maintenance-room-keyword">房號</label>
+          <Search size={17} />
+          <input
+            id="maintenance-room-keyword"
+            className="input"
+            value={roomKeyword}
+            onChange={(event) => {
+              setRoomKeyword(event.target.value);
+              setCurrentPage(1);
+            }}
+            placeholder="輸入房號"
+          />
+        </div>
+        {hasActiveFilters ? (
+          <button className="secondary-button align-end" type="button" onClick={clearFilters}>
+            <X size={17} />
+            清除篩選
+          </button>
+        ) : null}
       </div>
 
       {error ? <div className="error-box" style={{ marginBottom: 14 }}>{error}</div> : null}
