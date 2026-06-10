@@ -1141,7 +1141,16 @@ function DashboardContent({ role }: { role: Role }) {
               </tr>
             ) : (
               filteredRows.map((row) => (
-                <tr key={row.id} className={row.payment_status === "cash_paid" ? "row-cash-paid" : undefined}>
+                <tr
+                  key={row.id}
+                  className={
+                    row.payment_status === "cash_paid"
+                      ? "row-cash-paid"
+                      : row.payment_status === "bank_paid"
+                        ? "row-bank-paid"
+                        : undefined
+                  }
+                >
                   <td>
                     <strong>{row.rooms?.room_number ?? "-"}</strong>
                     <div className="muted">{getRoomBuilding(row.rooms) || "未設定棟別"}</div>

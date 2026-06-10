@@ -437,6 +437,14 @@ a {
   background: #e7f9ed;
 }
 
+.data-table tbody tr.row-bank-paid {
+  background: #eef6ff;
+}
+
+.data-table tbody tr.row-bank-paid:hover {
+  background: #e0efff;
+}
+
 .number-cell {
   text-align: right !important;
   font-variant-numeric: tabular-nums;

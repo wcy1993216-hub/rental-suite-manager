@@ -349,7 +349,16 @@ function RoomDetailContent({ role }: { role: Role }) {
                     </tr>
                   ) : (
                     bills.map((bill) => (
-                      <tr key={bill.id} className={bill.payment_status === "cash_paid" ? "row-cash-paid" : undefined}>
+                      <tr
+                        key={bill.id}
+                        className={
+                          bill.payment_status === "cash_paid"
+                            ? "row-cash-paid"
+                            : bill.payment_status === "bank_paid"
+                              ? "row-bank-paid"
+                              : undefined
+                        }
+                      >
                         <td>{bill.bill_month.slice(0, 7)}</td>
                         <td className="number-cell">{formatCurrency(bill.total_amount)}</td>
                         <td><PaymentMethodBadge method={bill.payment_method} /></td>
