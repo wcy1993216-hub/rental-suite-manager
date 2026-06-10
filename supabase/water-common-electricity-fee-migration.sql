@@ -88,3 +88,5 @@ begin
   raise exception 'viewer cannot update monthly bills';
 end;
 $$;
+
+notify pgrst, 'reload schema';
