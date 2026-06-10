@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import * as XLSX from "xlsx";
@@ -17,6 +17,10 @@ import type { ContractWithTenant, DashboardBill, MonthlyLock, PaymentMethod, Pay
 
 type StatusFilter = "all" | PaymentStatus;
 type MethodFilter = "all" | PaymentMethod;
+type SyncStatus = "idle" | "syncing" | "synced";
+
+const DASHBOARD_CACHE_PREFIX = "rental-dashboard-rows";
+const DASHBOARD_SYNC_REASON_KEY = "rental-dashboard-needs-sync";
 
 interface MonthlyBillInsertPayload {
   room_id: string;
@@ -143,6 +147,20 @@ function isMissingTableError(error: { message?: string; code?: string } | null) 
   return Boolean(error?.code === "42P01" || error?.message?.includes("does not exist"));
 }
 
+function sortDashboardRows(rows: DashboardBill[]) {
+  return [...rows].sort((a, b) => {
+    const buildingCompare = getRoomBuilding(a.rooms).localeCompare(getRoomBuilding(b.rooms), "zh-Hant");
+    if (buildingCompare !== 0) return buildingCompare;
+    return String(a.rooms?.room_number ?? "").localeCompare(String(b.rooms?.room_number ?? ""), "zh-Hant", {
+      numeric: true
+    });
+  });
+}
+
+function dashboardCacheKey(month: string) {
+  return `${DASHBOARD_CACHE_PREFIX}:${month}`;
+}
+
 export default function DashboardPage() {
   return (
     <AuthGuard>
@@ -165,15 +183,51 @@ function DashboardContent({ role }: { role: Role }) {
   const [keyword, setKeyword] = useState(searchParams.get("keyword") || "");
   const [rows, setRows] = useState<DashboardBill[]>([]);
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+  const [syncMessage, setSyncMessage] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [bankBill, setBankBill] = useState<DashboardBill | null>(null);
   const [savingBillId, setSavingBillId] = useState<string | null>(null);
+  const [rowSyncingIds, setRowSyncingIds] = useState<Set<string>>(() => new Set());
+  const [rowSyncedIds, setRowSyncedIds] = useState<Set<string>>(() => new Set());
   const [monthLock, setMonthLock] = useState<MonthlyLock | null>(null);
+  const rowsRef = useRef<DashboardBill[]>([]);
+  const loadRequestIdRef = useRef(0);
+  const syncMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const realtimeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localMutationIdsRef = useRef<Set<string>>(new Set());
 
-  const loadBills = useCallback(async () => {
+  const showSyncMessage = useCallback((status: SyncStatus, message: string) => {
+    if (syncMessageTimerRef.current) {
+      clearTimeout(syncMessageTimerRef.current);
+    }
+    setSyncStatus(status);
+    setSyncMessage(message);
+    if (status === "synced") {
+      syncMessageTimerRef.current = setTimeout(() => {
+        setSyncStatus("idle");
+        setSyncMessage("");
+      }, 2400);
+    }
+  }, []);
+
+  const replaceOneRow = useCallback((nextRow: DashboardBill) => {
+    setRows((currentRows) => sortDashboardRows(currentRows.map((row) => (row.id === nextRow.id ? nextRow : row))));
+  }, []);
+
+  const loadBills = useCallback(async (options: { background?: boolean; reason?: "manual" | "navigation" | "realtime" | "mutation" } = {}) => {
     if (!supabase) return;
-    setLoading(true);
+    const background = options.background ?? rowsRef.current.length > 0;
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
+
+    if (background) {
+      showSyncMessage("syncing", "同步中...");
+    } else {
+      setInitialLoading(true);
+    }
     setError("");
 
     const billMonth = monthInputToBillMonth(month);
@@ -188,8 +242,8 @@ function DashboardContent({ role }: { role: Role }) {
 
     if (lockError && !isMissingTableError(lockError)) {
       setError(lockError.message);
-      setRows([]);
-      setLoading(false);
+      setInitialLoading(false);
+      setSyncStatus("idle");
       return;
     }
 
@@ -200,21 +254,18 @@ function DashboardContent({ role }: { role: Role }) {
 
     if (queryError) {
       setError(queryError.message);
-      setRows([]);
+      setInitialLoading(false);
+      setSyncStatus("idle");
     } else {
       let normalizedRows = normalizeBillRows(data as unknown[] | null);
       const existingRoomIds = new Set(normalizedRows.map((bill) => bill.room_id));
 
       if (currentMonthLock) {
-        normalizedRows = normalizedRows.sort((a, b) => {
-          const buildingCompare = getRoomBuilding(a.rooms).localeCompare(getRoomBuilding(b.rooms), "zh-Hant");
-          if (buildingCompare !== 0) return buildingCompare;
-          return String(a.rooms?.room_number ?? "").localeCompare(String(b.rooms?.room_number ?? ""), "zh-Hant", {
-            numeric: true
-          });
-        });
-        setRows(normalizedRows);
-        setLoading(false);
+        if (requestId === loadRequestIdRef.current) {
+          setRows(sortDashboardRows(normalizedRows));
+          setInitialLoading(false);
+          showSyncMessage("synced", options.reason === "realtime" ? "資料已更新" : "已同步");
+        }
         return;
       }
 
@@ -231,8 +282,8 @@ function DashboardContent({ role }: { role: Role }) {
 
       if (roomError || activeContractError) {
         setError(roomError?.message ?? activeContractError?.message ?? "補齊空房帳單失敗。");
-        setRows([]);
-        setLoading(false);
+        setInitialLoading(false);
+        setSyncStatus("idle");
         return;
       }
 
@@ -249,8 +300,8 @@ function DashboardContent({ role }: { role: Role }) {
         const { error: insertError } = await supabase.from("monthly_bills").insert(vacantBillsToInsert);
         if (insertError) {
           setError(insertError.message);
-          setRows([]);
-          setLoading(false);
+          setInitialLoading(false);
+          setSyncStatus("idle");
           return;
         }
 
@@ -261,30 +312,70 @@ function DashboardContent({ role }: { role: Role }) {
 
         if (refreshedError) {
           setError(refreshedError.message);
-          setRows([]);
-          setLoading(false);
+          setInitialLoading(false);
+          setSyncStatus("idle");
           return;
         }
 
         normalizedRows = normalizeBillRows(refreshedData as unknown[] | null);
       }
 
-      normalizedRows = normalizedRows.sort((a, b) => {
-        const buildingCompare = getRoomBuilding(a.rooms).localeCompare(getRoomBuilding(b.rooms), "zh-Hant");
-        if (buildingCompare !== 0) return buildingCompare;
-        return String(a.rooms?.room_number ?? "").localeCompare(String(b.rooms?.room_number ?? ""), "zh-Hant", {
-          numeric: true
-        });
-      });
-      setRows(normalizedRows);
+      if (requestId === loadRequestIdRef.current) {
+        setRows(sortDashboardRows(normalizedRows));
+        setInitialLoading(false);
+        showSyncMessage("synced", options.reason === "realtime" ? "資料已更新" : "已同步");
+      }
     }
-
-    setLoading(false);
-  }, [month, supabase]);
+  }, [month, showSyncMessage, supabase]);
 
   useEffect(() => {
-    void loadBills();
-  }, [loadBills]);
+    rowsRef.current = rows;
+    if (typeof window !== "undefined" && rows.length > 0) {
+      sessionStorage.setItem(dashboardCacheKey(month), JSON.stringify(rows));
+    }
+  }, [month, rows]);
+
+  useEffect(() => {
+    let hasCachedRows = false;
+    if (typeof window !== "undefined") {
+      const cachedRows = sessionStorage.getItem(dashboardCacheKey(month));
+      if (cachedRows) {
+        try {
+          const parsedRows = JSON.parse(cachedRows) as DashboardBill[];
+          setRows(sortDashboardRows(parsedRows));
+          rowsRef.current = parsedRows;
+          setInitialLoading(false);
+          hasCachedRows = parsedRows.length > 0;
+        } catch {
+          sessionStorage.removeItem(dashboardCacheKey(month));
+        }
+      } else {
+        setRows([]);
+        rowsRef.current = [];
+        setInitialLoading(true);
+      }
+    }
+
+    const syncReason = typeof window !== "undefined" ? sessionStorage.getItem(DASHBOARD_SYNC_REASON_KEY) : null;
+    if (syncReason) {
+      sessionStorage.removeItem(DASHBOARD_SYNC_REASON_KEY);
+    }
+    void loadBills({
+      background: hasCachedRows,
+      reason: syncReason ? "navigation" : "manual"
+    });
+  }, [loadBills, month]);
+
+  useEffect(() => {
+    return () => {
+      if (syncMessageTimerRef.current) {
+        clearTimeout(syncMessageTimerRef.current);
+      }
+      if (realtimeTimerRef.current) {
+        clearTimeout(realtimeTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const nextParams = new URLSearchParams();
@@ -300,6 +391,39 @@ function DashboardContent({ role }: { role: Role }) {
       router.replace(nextUrl, { scroll: false });
     }
   }, [building, keyword, method, month, pathname, router, searchParams, status]);
+
+  const queueRealtimeSync = useCallback((payload?: { table?: string; new?: { id?: string }; old?: { id?: string } }) => {
+    const changedId = payload?.new?.id ?? payload?.old?.id;
+    if (payload?.table === "monthly_bills" && changedId && localMutationIdsRef.current.has(changedId)) {
+      return;
+    }
+    if (realtimeTimerRef.current) {
+      clearTimeout(realtimeTimerRef.current);
+    }
+    showSyncMessage("syncing", "同步中...");
+    realtimeTimerRef.current = setTimeout(() => {
+      void loadBills({ background: true, reason: "realtime" });
+    }, 650);
+  }, [loadBills, showSyncMessage]);
+
+  useEffect(() => {
+    if (!supabase) return;
+
+    const channel = supabase
+      .channel(`dashboard-realtime-${month}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "rooms" }, queueRealtimeSync)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tenants" }, queueRealtimeSync)
+      .on("postgres_changes", { event: "*", schema: "public", table: "contracts" }, queueRealtimeSync)
+      .on("postgres_changes", { event: "*", schema: "public", table: "monthly_bills" }, queueRealtimeSync)
+      .subscribe();
+
+    return () => {
+      if (realtimeTimerRef.current) {
+        clearTimeout(realtimeTimerRef.current);
+      }
+      void supabase.removeChannel(channel);
+    };
+  }, [month, queueRealtimeSync, supabase]);
 
   const currentDashboardParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -420,18 +544,60 @@ function DashboardContent({ role }: { role: Role }) {
   async function confirmCashPayment(bill: DashboardBill) {
     if (!supabase) return;
     if (!ensureMonthUnlocked()) return;
+    const paidDate = todayString();
+    const previousBill = bill;
+
+    setError("");
+    setNotice("");
+    setRowSyncedIds((current) => {
+      const next = new Set(current);
+      next.delete(bill.id);
+      return next;
+    });
+    localMutationIdsRef.current.add(bill.id);
+    setRowSyncingIds((current) => new Set(current).add(bill.id));
+    setRows((currentRows) =>
+      currentRows.map((row) =>
+        row.id === bill.id
+          ? {
+              ...row,
+              payment_method: "cash",
+              payment_status: "cash_paid",
+              paid_date: paidDate
+            }
+          : row
+      )
+    );
+
     const { error: updateError } = await supabase
       .from("monthly_bills")
       .update({
         payment_method: "cash",
         payment_status: "cash_paid",
-        paid_date: todayString()
+        paid_date: paidDate
       })
       .eq("id", bill.id);
 
     if (updateError) {
+      replaceOneRow(previousBill);
       setError(updateError.message);
+      setRowSyncingIds((current) => {
+        const next = new Set(current);
+        next.delete(bill.id);
+        return next;
+      });
+      localMutationIdsRef.current.delete(bill.id);
       return;
+    }
+
+    const { data: refreshedBill } = await supabase
+      .from("monthly_bills")
+      .select("*, rooms(*), contracts(*, tenants(*))")
+      .eq("id", bill.id)
+      .single();
+
+    if (refreshedBill) {
+      replaceOneRow(normalizeBillRows([refreshedBill])[0]);
     }
 
     await logAuditAction(supabase, {
@@ -445,7 +611,21 @@ function DashboardContent({ role }: { role: Role }) {
         total_amount: bill.total_amount
       }
     });
-    await loadBills();
+    setRowSyncingIds((current) => {
+      const next = new Set(current);
+      next.delete(bill.id);
+      return next;
+    });
+    setRowSyncedIds((current) => new Set(current).add(bill.id));
+    setNotice("已同步");
+    setTimeout(() => {
+      setRowSyncedIds((current) => {
+        const next = new Set(current);
+        next.delete(bill.id);
+        return next;
+      });
+      localMutationIdsRef.current.delete(bill.id);
+    }, 2200);
   }
 
   async function resetPaymentStatus(bill: DashboardBill) {
@@ -845,7 +1025,7 @@ function DashboardContent({ role }: { role: Role }) {
               )}
             </>
           ) : null}
-          <button className="secondary-button" type="button" onClick={loadBills}>
+          <button className="secondary-button" type="button" onClick={() => loadBills({ background: rows.length > 0, reason: "manual" })}>
             <RefreshCw size={17} />
             重新整理
           </button>
@@ -853,6 +1033,9 @@ function DashboardContent({ role }: { role: Role }) {
             <Download size={17} />
             匯出本月對帳單
           </button>
+          {syncStatus !== "idle" ? (
+            <span className={`sync-pill sync-${syncStatus}`}>{syncMessage}</span>
+          ) : null}
         </div>
       </div>
 
@@ -948,7 +1131,7 @@ function DashboardContent({ role }: { role: Role }) {
             </tr>
           </thead>
           <tbody>
-            {loading ? (
+            {initialLoading && rows.length === 0 ? (
               <tr>
                 <td colSpan={13}>載入中...</td>
               </tr>
@@ -1023,11 +1206,19 @@ function DashboardContent({ role }: { role: Role }) {
                           <Landmark size={17} />
                         </button>
                       ) : null}
-                      {canConfirmCash(role) && row.payment_status !== "cash_paid" && row.payment_status !== "vacant" && !monthLock ? (
-                        <button className="icon-button" type="button" onClick={() => confirmCashPayment(row)} title="確認收到現金">
+                      {canConfirmCash(role) && (row.payment_status !== "cash_paid" || rowSyncingIds.has(row.id)) && row.payment_status !== "vacant" && !monthLock ? (
+                        <button
+                          className="icon-button"
+                          type="button"
+                          onClick={() => confirmCashPayment(row)}
+                          title={rowSyncingIds.has(row.id) ? "同步中..." : "確認收到現金"}
+                          disabled={rowSyncingIds.has(row.id)}
+                        >
                           <Banknote size={17} />
                         </button>
                       ) : null}
+                      {rowSyncingIds.has(row.id) ? <span className="row-sync-text">同步中...</span> : null}
+                      {rowSyncedIds.has(row.id) ? <span className="row-sync-text synced">已同步</span> : null}
                       {canManageEverything(role) && !["unpaid", "vacant", "rent_prepaid"].includes(row.payment_status) && !monthLock ? (
                         <button className="icon-button" type="button" onClick={() => resetPaymentStatus(row)} title="撤回為未收">
                           <Undo2 size={17} />

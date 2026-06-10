@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, LogOut, Pencil, Plus, RefreshCw, UserRoundCog, Wrench } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { Modal } from "@/components/Modal";
@@ -37,6 +37,7 @@ export default function RoomDetailPage() {
 
 function RoomDetailContent({ role }: { role: Role }) {
   const params = useParams<{ roomId: string }>();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const roomId = params.roomId;
   const returnHref = searchParams.get("return") || "/dashboard";
@@ -51,6 +52,13 @@ function RoomDetailContent({ role }: { role: Role }) {
   const [changingTenant, setChangingTenant] = useState(false);
   const [addingMaintenance, setAddingMaintenance] = useState(false);
   const [movingOut, setMovingOut] = useState(false);
+
+  function returnToDashboardWithSync() {
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("rental-dashboard-needs-sync", "room-detail-saved");
+    }
+    router.push(returnHref);
+  }
 
   const loadRoomDetail = useCallback(async () => {
     if (!supabase || !roomId) return;
@@ -297,7 +305,7 @@ function RoomDetailContent({ role }: { role: Role }) {
           onClose={() => setEditingTenant(false)}
           onSaved={async () => {
             setEditingTenant(false);
-            await loadRoomDetail();
+            returnToDashboardWithSync();
           }}
         />
       ) : null}
@@ -309,7 +317,7 @@ function RoomDetailContent({ role }: { role: Role }) {
           onClose={() => setChangingTenant(false)}
           onSaved={async () => {
             setChangingTenant(false);
-            await loadRoomDetail();
+            returnToDashboardWithSync();
           }}
         />
       ) : null}
@@ -333,7 +341,7 @@ function RoomDetailContent({ role }: { role: Role }) {
           onClose={() => setMovingOut(false)}
           onSaved={async () => {
             setMovingOut(false);
-            await loadRoomDetail();
+            returnToDashboardWithSync();
           }}
         />
       ) : null}
