@@ -768,6 +768,15 @@ a {
   padding-right: 18px !important;
 }
 
+.dashboard-cell-note {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .dashboard-status-cell {
   padding-left: 18px !important;
 }

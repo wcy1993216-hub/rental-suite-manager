@@ -15,7 +15,7 @@ import { formatCurrency, formatDate, getCurrentMonthInputValue, monthInputToBill
 import { canConfirmCash, canManageEverything, canRegisterBankTransfer, PAYMENT_METHOD_LABELS, PAYMENT_STATUS_LABELS } from "@/lib/permissions";
 import { getRoomBuilding } from "@/lib/rooms";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import type { ContractWithTenant, DashboardBill, MonthlyLock, PaymentMethod, PaymentStatus, RentPaymentCycle, Room, Role } from "@/lib/types";
+import type { ContractWithTenant, DashboardBill, MonthlyLock, PaymentMethod, PaymentStatus, ReceivableItem, RentPaymentCycle, Room, Role } from "@/lib/types";
 
 type StatusFilter = "all" | PaymentStatus;
 type SyncStatus = "idle" | "syncing" | "synced";
@@ -45,6 +45,8 @@ interface DashboardRowsCachePayload {
   savedAt: number;
   rows: DashboardBill[];
 }
+
+type ReceivableItemInsertPayload = Omit<ReceivableItem, "id" | "created_at" | "updated_at">;
 
 function normalizeBillRows(data: unknown[] | null): DashboardBill[] {
   return (data ?? []).map((item) => {
@@ -122,6 +124,25 @@ function getReceivedAmount(row: Pick<DashboardBill, "payment_status" | "payment_
 function getUnpaidBalance(row: Pick<DashboardBill, "payment_status" | "payment_method" | "total_amount" | "transfer_amount">) {
   if (row.payment_status === "vacant") return 0;
   return Math.max(Number(row.total_amount ?? 0) - getReceivedAmount(row), 0);
+}
+
+function getReceivableBalance(item: ReceivableItem) {
+  return Math.max(Number(item.amount ?? 0) - Number(item.paid_amount ?? 0), 0);
+}
+
+function getNextBillMonth(billMonth: string) {
+  const date = new Date(`${billMonth.slice(0, 7)}-01T00:00:00`);
+  date.setMonth(date.getMonth() + 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
+function getEffectiveTotal(row: DashboardBill, receivableAmount = 0) {
+  return Number(row.total_amount ?? 0) + receivableAmount;
+}
+
+function doesReceivableApplyToBill(row: Pick<DashboardBill, "room_id" | "contract_id">, item: ReceivableItem) {
+  if (item.room_id !== row.room_id) return false;
+  return !item.contract_id || item.contract_id === row.contract_id;
 }
 
 function createVacantBillPayload(roomId: string, billMonth: string): MonthlyBillInsertPayload {
@@ -254,6 +275,7 @@ function DashboardContent({ role }: { role: Role }) {
   const [status, setStatus] = useState<StatusFilter>(isPaymentStatus(statusParam) ? statusParam : "all");
   const [keyword, setKeyword] = useState(searchParams.get("keyword") || "");
   const [rows, setRows] = useState<DashboardBill[]>([]);
+  const [receivableItems, setReceivableItems] = useState<ReceivableItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
@@ -320,16 +342,33 @@ function DashboardContent({ role }: { role: Role }) {
       return;
     }
 
-    const { data, error: queryError } = await supabase
-      .from("monthly_bills")
-      .select("*, rooms(*), contracts(*, tenants(*))")
-      .eq("bill_month", billMonth);
+    const [
+      { data, error: queryError },
+      { data: receivableData, error: receivableError }
+    ] = await Promise.all([
+      supabase
+        .from("monthly_bills")
+        .select("*, rooms(*), contracts(*, tenants(*))")
+        .eq("bill_month", billMonth),
+      supabase
+        .from("receivable_items")
+        .select("*")
+        .eq("status", "open")
+        .lte("due_bill_month", billMonth)
+    ]);
 
     if (queryError) {
       setError(queryError.message);
       setInitialLoading(false);
       setSyncStatus("idle");
     } else {
+      if (receivableError && !isMissingTableError(receivableError)) {
+        setError(receivableError.message);
+        setInitialLoading(false);
+        setSyncStatus("idle");
+        return;
+      }
+      setReceivableItems(receivableError ? [] : ((receivableData ?? []) as ReceivableItem[]));
       let normalizedRows = normalizeBillRows(data as unknown[] | null);
       const existingRoomIds = new Set(normalizedRows.map((bill) => bill.room_id));
 
@@ -487,6 +526,7 @@ function DashboardContent({ role }: { role: Role }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "tenants" }, queueRealtimeSync)
       .on("postgres_changes", { event: "*", schema: "public", table: "contracts" }, queueRealtimeSync)
       .on("postgres_changes", { event: "*", schema: "public", table: "monthly_bills" }, queueRealtimeSync)
+      .on("postgres_changes", { event: "*", schema: "public", table: "receivable_items" }, queueRealtimeSync)
       .subscribe();
 
     return () => {
@@ -523,6 +563,19 @@ function DashboardContent({ role }: { role: Role }) {
   const totalBuildingCount = useMemo(() => {
     return Array.from(buildingCounts.values()).reduce((sum, count) => sum + count, 0);
   }, [buildingCounts]);
+
+  const receivableBalanceByBillId = useMemo(() => {
+    const balances = new Map<string, number>();
+    rows.forEach((row) => {
+      const balance = receivableItems.reduce((sum, item) => {
+        if (!doesReceivableApplyToBill(row, item)) return sum;
+        return sum + getReceivableBalance(item);
+      }, 0);
+      if (balance <= 0) return;
+      balances.set(row.id, balance);
+    });
+    return balances;
+  }, [receivableItems, rows]);
 
   useEffect(() => {
     if (rows.length > 0 && building !== "all" && !buildings.includes(building)) {
@@ -596,24 +649,24 @@ function DashboardContent({ role }: { role: Role }) {
   }, [currentPage, filteredRows, focusedRoomId, pageSize, setCurrentPage]);
 
   const summary = useMemo(() => {
-    const total = filteredRows.reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0);
+    const total = filteredRows.reduce((sum, row) => sum + getEffectiveTotal(row, receivableBalanceByBillId.get(row.id) ?? 0), 0);
     const bankReceived = filteredRows
       .filter((row) => row.payment_method === "bank_transfer" && ["bank_paid", "partial_paid"].includes(row.payment_status))
-      .reduce((sum, row) => sum + getReceivedAmount(row), 0);
+      .reduce((sum, row) => sum + getReceivedAmount({ ...row, total_amount: getEffectiveTotal(row, receivableBalanceByBillId.get(row.id) ?? 0) }), 0);
     const cashReceived = filteredRows
       .filter((row) => row.payment_status === "cash_paid")
-      .reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0);
+      .reduce((sum, row) => sum + getEffectiveTotal(row, receivableBalanceByBillId.get(row.id) ?? 0), 0);
     const received = bankReceived + cashReceived;
-    const unpaidRows = filteredRows.filter((row) => getUnpaidBalance(row) > 0);
+    const unpaidRows = filteredRows.filter((row) => getUnpaidBalance({ ...row, total_amount: getEffectiveTotal(row, receivableBalanceByBillId.get(row.id) ?? 0) }) > 0);
     return {
       total,
       received,
-      unpaid: filteredRows.reduce((sum, row) => sum + getUnpaidBalance(row), 0),
+      unpaid: filteredRows.reduce((sum, row) => sum + getUnpaidBalance({ ...row, total_amount: getEffectiveTotal(row, receivableBalanceByBillId.get(row.id) ?? 0) }), 0),
       bankReceived,
       cashReceived,
       unpaidCount: unpaidRows.length
     };
-  }, [filteredRows]);
+  }, [filteredRows, receivableBalanceByBillId]);
 
   function ensureMonthUnlocked() {
     if (!monthLock) return true;
@@ -685,6 +738,9 @@ function DashboardContent({ role }: { role: Role }) {
     if (!ensureMonthUnlocked()) return;
     const paidDate = todayString();
     const previousBill = bill;
+    const currentReceivableItems = receivableItems.filter((item) => item.status === "open" && doesReceivableApplyToBill(bill, item));
+    const receivableBalance = currentReceivableItems.reduce((sum, item) => sum + getReceivableBalance(item), 0);
+    const fullPaymentAmount = getEffectiveTotal(bill, receivableBalance);
 
     setError("");
     setNotice("");
@@ -729,6 +785,20 @@ function DashboardContent({ role }: { role: Role }) {
       return;
     }
 
+    try {
+      await applyPaymentToReceivableItems(supabase, currentReceivableItems, fullPaymentAmount);
+      await syncBillReceivableItem(supabase, bill, 0);
+    } catch (receivableError) {
+      setError(receivableError instanceof Error ? receivableError.message : "更新前期欠款失敗。");
+      setRowSyncingIds((current) => {
+        const next = new Set(current);
+        next.delete(bill.id);
+        return next;
+      });
+      localMutationIdsRef.current.delete(bill.id);
+      return;
+    }
+
     const { data: refreshedBill } = await supabase
       .from("monthly_bills")
       .select("*, rooms(*), contracts(*, tenants(*))")
@@ -747,7 +817,9 @@ function DashboardContent({ role }: { role: Role }) {
       room_id: bill.room_id,
       detail: {
         room_number: bill.rooms?.room_number ?? null,
-        total_amount: bill.total_amount
+        total_amount: bill.total_amount,
+        receivable_balance: receivableBalance,
+        effective_total: fullPaymentAmount
       }
     });
     setRowSyncingIds((current) => {
@@ -788,6 +860,19 @@ function DashboardContent({ role }: { role: Role }) {
 
     if (updateError) {
       setError(updateError.message);
+      return;
+    }
+
+    const { error: receivableError } = await supabase
+      .from("receivable_items")
+      .update({
+        status: "waived",
+        note: "收款狀態撤回"
+      })
+      .eq("source_bill_id", bill.id);
+
+    if (receivableError && !isMissingTableError(receivableError)) {
+      setError(receivableError.message);
       return;
     }
 
@@ -1114,12 +1199,13 @@ function DashboardContent({ role }: { role: Role }) {
 
     const totals = sortedRows.reduce(
       (sum, row) => {
-        const totalAmount = Number(row.total_amount ?? 0);
+        const receivableBalance = receivableBalanceByBillId.get(row.id) ?? 0;
+        const totalAmount = getEffectiveTotal(row, receivableBalance);
         const bankAmount = row.payment_method === "bank_transfer" && ["bank_paid", "partial_paid"].includes(row.payment_status)
-          ? getReceivedAmount(row)
+          ? getReceivedAmount({ ...row, total_amount: totalAmount })
           : 0;
         const cashAmount = row.payment_status === "cash_paid" ? totalAmount : 0;
-        const unpaidBalance = getUnpaidBalance(row);
+        const unpaidBalance = getUnpaidBalance({ ...row, total_amount: totalAmount });
         return {
           total: sum.total + totalAmount,
           bank: sum.bank + bankAmount,
@@ -1156,7 +1242,8 @@ function DashboardContent({ role }: { role: Role }) {
       電費: Number(row.electricity_fee ?? 0),
       "水費/公電": Number(row.water_common_electricity_fee ?? 0),
       其他: Number(row.misc_fee ?? 0),
-      當月應繳總額: Number(row.total_amount ?? 0),
+      前期欠款: Number(receivableBalanceByBillId.get(row.id) ?? 0),
+      當月應繳總額: getEffectiveTotal(row, receivableBalanceByBillId.get(row.id) ?? 0),
       付款方式: PAYMENT_METHOD_LABELS[row.payment_method],
       狀態: PAYMENT_STATUS_LABELS[row.payment_status],
       繳款日: row.paid_date ?? "",
@@ -1417,7 +1504,12 @@ function DashboardContent({ role }: { role: Role }) {
                       formatCurrency(row.misc_fee)
                     )}
                   </td>
-                  <td className="number-cell dashboard-total-cell">{formatCurrency(row.total_amount)}</td>
+                  <td className="number-cell dashboard-total-cell">
+                    {formatCurrency(getEffectiveTotal(row, receivableBalanceByBillId.get(row.id) ?? 0))}
+                    {(receivableBalanceByBillId.get(row.id) ?? 0) > 0 ? (
+                      <div className="dashboard-cell-note">含前欠 {formatCurrency(receivableBalanceByBillId.get(row.id) ?? 0)}</div>
+                    ) : null}
+                  </td>
                   <td className="dashboard-status-cell"><PaymentStatusBadge status={row.payment_status} /></td>
                   <td>{formatDate(row.paid_date)}</td>
                   <td className="dashboard-note-cell">
@@ -1483,6 +1575,7 @@ function DashboardContent({ role }: { role: Role }) {
       {bankBill ? (
         <BankTransferDialog
           bill={bankBill}
+          receivableItems={receivableItems.filter((item) => item.status === "open" && doesReceivableApplyToBill(bankBill, item))}
           onClose={() => setBankBill(null)}
           onSaved={async () => {
             setBankBill(null);
@@ -1557,19 +1650,88 @@ function DashboardPaginationControls({
   );
 }
 
+async function applyPaymentToReceivableItems(
+  supabase: NonNullable<ReturnType<typeof getSupabaseBrowserClient>>,
+  items: ReceivableItem[],
+  amount: number
+) {
+  let remainingAmount = amount;
+  let appliedAmount = 0;
+  const sortedItems = [...items].sort((a, b) =>
+    `${a.source_bill_month}-${a.created_at}`.localeCompare(`${b.source_bill_month}-${b.created_at}`)
+  );
+
+  for (const item of sortedItems) {
+    if (remainingAmount <= 0) break;
+    const balance = getReceivableBalance(item);
+    if (balance <= 0) continue;
+    const applied = Math.min(balance, remainingAmount);
+    const nextPaidAmount = Number(item.paid_amount ?? 0) + applied;
+    const nextStatus = nextPaidAmount >= Number(item.amount ?? 0) ? "settled" : "open";
+    const { error } = await supabase
+      .from("receivable_items")
+      .update({
+        paid_amount: nextPaidAmount,
+        status: nextStatus
+      })
+      .eq("id", item.id);
+    if (error) throw error;
+    remainingAmount -= applied;
+    appliedAmount += applied;
+  }
+
+  return appliedAmount;
+}
+
+async function syncBillReceivableItem(
+  supabase: NonNullable<ReturnType<typeof getSupabaseBrowserClient>>,
+  bill: DashboardBill,
+  unpaidAmount: number
+) {
+  if (unpaidAmount > 0) {
+    const payload: ReceivableItemInsertPayload = {
+      room_id: bill.room_id,
+      contract_id: bill.contract_id,
+      source_bill_id: bill.id,
+      source_bill_month: bill.bill_month,
+      due_bill_month: getNextBillMonth(bill.bill_month),
+      amount: unpaidAmount,
+      paid_amount: 0,
+      status: "open",
+      note: "部分收款順延"
+    };
+    const { error } = await supabase.from("receivable_items").upsert(payload, { onConflict: "source_bill_id" });
+    if (error) throw error;
+    return;
+  }
+
+  const { error } = await supabase
+    .from("receivable_items")
+    .update({
+      paid_amount: 0,
+      status: "settled"
+    })
+    .eq("source_bill_id", bill.id);
+  if (error && !isMissingTableError(error)) throw error;
+}
+
 function BankTransferDialog({
   bill,
+  receivableItems,
   onClose,
   onSaved
 }: {
   bill: DashboardBill;
+  receivableItems: ReceivableItem[];
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
   const supabase = getSupabaseBrowserClient();
+  const receivableBalance = receivableItems.reduce((sum, item) => sum + getReceivableBalance(item), 0);
+  const effectiveTotal = getEffectiveTotal(bill, receivableBalance);
   const [paidDate, setPaidDate] = useState(bill.paid_date ?? todayString());
   const [last5, setLast5] = useState(bill.transfer_last5 ?? "");
-  const [amount, setAmount] = useState(String(bill.transfer_amount ?? bill.total_amount ?? ""));
+  const [amount, setAmount] = useState(String(bill.transfer_amount ?? effectiveTotal ?? ""));
   const [note, setNote] = useState(bill.note ?? "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -1582,7 +1744,7 @@ function BankTransferDialog({
     setError("");
     const numericAmount = Number(amount) || 0;
     const totalAmount = Number(bill.total_amount ?? 0);
-    if (finalStatus === "partial_paid" && (numericAmount <= 0 || numericAmount >= totalAmount)) {
+    if (finalStatus === "partial_paid" && (numericAmount <= 0 || numericAmount >= effectiveTotal)) {
       setError("部分收款金額需大於 0 且小於當月應繳總額。");
       setSaving(false);
       return;
@@ -1602,6 +1764,17 @@ function BankTransferDialog({
 
     if (updateError) {
       setError(updateError.message);
+      setSaving(false);
+      return;
+    }
+
+    try {
+      const amountAppliedToReceivables = await applyPaymentToReceivableItems(supabase, receivableItems, numericAmount);
+      const amountAppliedToCurrentBill = Math.max(numericAmount - amountAppliedToReceivables, 0);
+      const currentBillUnpaidAmount = finalStatus === "partial_paid" ? Math.max(totalAmount - amountAppliedToCurrentBill, 0) : 0;
+      await syncBillReceivableItem(supabase, bill, currentBillUnpaidAmount);
+    } catch (receivableError) {
+      setError(receivableError instanceof Error ? receivableError.message : "更新前期欠款失敗。");
       setSaving(false);
       return;
     }
@@ -1634,8 +1807,14 @@ function BankTransferDialog({
             </div>
             <div className="form-field">
               <label>當月應繳總額</label>
-              <input className="input" value={formatCurrency(bill.total_amount)} disabled />
+              <input className="input" value={formatCurrency(effectiveTotal)} disabled />
             </div>
+            {receivableBalance > 0 ? (
+              <div className="form-field">
+                <label>含前期欠款</label>
+                <input className="input" value={formatCurrency(receivableBalance)} disabled />
+              </div>
+            ) : null}
             <div className="form-field">
               <label htmlFor="paid-date">匯款日期</label>
               <input id="paid-date" className="input" type="date" value={paidDate} onChange={(event) => setPaidDate(event.target.value)} />

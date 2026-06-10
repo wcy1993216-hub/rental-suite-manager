@@ -6,6 +6,7 @@ export type RentPaymentCycle = "monthly" | "semiannual" | "annual";
 export type PaymentMethod = "bank_transfer" | "cash" | "none";
 export type PaymentStatus = "unpaid" | "bank_paid" | "cash_paid" | "partial_paid" | "pending" | "abnormal" | "vacant" | "rent_prepaid";
 export type MaintenanceStatus = "pending" | "processing" | "completed";
+export type ReceivableItemStatus = "open" | "settled" | "waived";
 
 export interface Profile {
   id: string;
@@ -116,4 +117,19 @@ export interface MaintenanceRecord {
   worker: string | null;
   note: string | null;
   created_at: string;
+}
+
+export interface ReceivableItem {
+  id: string;
+  room_id: string;
+  contract_id: string | null;
+  source_bill_id: string | null;
+  source_bill_month: string;
+  due_bill_month: string;
+  amount: number;
+  paid_amount: number;
+  status: ReceivableItemStatus;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
 }

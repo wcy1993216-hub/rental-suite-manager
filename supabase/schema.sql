@@ -128,6 +128,22 @@ alter table public.monthly_bills
 alter table public.monthly_bills
   add column if not exists water_common_electricity_fee numeric(12, 2) not null default 0;
 
+create table if not exists public.receivable_items (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references public.rooms(id) on delete restrict,
+  contract_id uuid references public.contracts(id) on delete set null,
+  source_bill_id uuid references public.monthly_bills(id) on delete set null,
+  source_bill_month date not null,
+  due_bill_month date not null,
+  amount numeric(12, 2) not null default 0,
+  paid_amount numeric(12, 2) not null default 0,
+  status text not null default 'open',
+  note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (source_bill_id)
+);
+
 create table if not exists public.maintenance_records (
   id uuid primary key default gen_random_uuid(),
   room_id uuid not null references public.rooms(id) on delete restrict,
@@ -177,6 +193,8 @@ create index if not exists idx_monthly_bills_bill_month on public.monthly_bills(
 create index if not exists idx_monthly_bills_payment_status on public.monthly_bills(payment_status);
 create index if not exists idx_monthly_bills_payment_method on public.monthly_bills(payment_method);
 create unique index if not exists idx_monthly_bills_one_per_room_month on public.monthly_bills(room_id, bill_month);
+create index if not exists idx_receivable_items_room_due on public.receivable_items(room_id, due_bill_month);
+create index if not exists idx_receivable_items_status on public.receivable_items(status);
 create index if not exists idx_contracts_room_status on public.contracts(room_id, status);
 create unique index if not exists idx_contracts_one_active_per_room on public.contracts(room_id) where status = 'active';
 create index if not exists idx_maintenance_records_room on public.maintenance_records(room_id);
@@ -217,6 +235,11 @@ $$;
 drop trigger if exists set_monthly_bills_updated_at on public.monthly_bills;
 create trigger set_monthly_bills_updated_at
 before update on public.monthly_bills
+for each row execute function public.set_updated_at();
+
+drop trigger if exists set_receivable_items_updated_at on public.receivable_items;
+create trigger set_receivable_items_updated_at
+before update on public.receivable_items
 for each row execute function public.set_updated_at();
 
 alter table public.rooms
@@ -310,6 +333,26 @@ alter table public.monthly_bills
     or (payment_status in ('vacant', 'rent_prepaid') and payment_method = 'none')
     or payment_status in ('unpaid', 'abnormal', 'partial_paid')
   )
+  not valid;
+
+alter table public.receivable_items
+  drop constraint if exists receivable_items_amounts_nonnegative;
+
+alter table public.receivable_items
+  add constraint receivable_items_amounts_nonnegative
+  check (
+    amount >= 0
+    and paid_amount >= 0
+    and paid_amount <= amount
+  )
+  not valid;
+
+alter table public.receivable_items
+  drop constraint if exists receivable_items_status_check;
+
+alter table public.receivable_items
+  add constraint receivable_items_status_check
+  check (status in ('open', 'settled', 'waived'))
   not valid;
 
 alter table public.maintenance_records
@@ -482,6 +525,7 @@ alter table public.rooms enable row level security;
 alter table public.tenants enable row level security;
 alter table public.contracts enable row level security;
 alter table public.monthly_bills enable row level security;
+alter table public.receivable_items enable row level security;
 alter table public.maintenance_records enable row level security;
 alter table public.profiles enable row level security;
 alter table public.monthly_locks enable row level security;
@@ -607,6 +651,32 @@ with check (
   and payment_method = 'cash'
 );
 
+drop policy if exists receivable_items_select on public.receivable_items;
+create policy receivable_items_select on public.receivable_items
+for select using (
+  public.is_role(array['super_admin','accountant_a','viewer']::public.app_role[])
+  or public.current_app_role() = 'cash_collector_b'
+);
+
+drop policy if exists receivable_items_super_admin_manage on public.receivable_items;
+create policy receivable_items_super_admin_manage on public.receivable_items
+for all using (public.is_role(array['super_admin']::public.app_role[]))
+with check (public.is_role(array['super_admin']::public.app_role[]));
+
+drop policy if exists receivable_items_accountant_insert on public.receivable_items;
+create policy receivable_items_accountant_insert on public.receivable_items
+for insert with check (public.current_app_role() = 'accountant_a');
+
+drop policy if exists receivable_items_accountant_update on public.receivable_items;
+create policy receivable_items_accountant_update on public.receivable_items
+for update using (public.current_app_role() = 'accountant_a')
+with check (public.current_app_role() = 'accountant_a');
+
+drop policy if exists receivable_items_cash_update on public.receivable_items;
+create policy receivable_items_cash_update on public.receivable_items
+for update using (public.current_app_role() = 'cash_collector_b')
+with check (public.current_app_role() = 'cash_collector_b');
+
 drop policy if exists maintenance_records_select on public.maintenance_records;
 create policy maintenance_records_select on public.maintenance_records
 for select using (
@@ -642,6 +712,10 @@ begin
 
     if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'monthly_bills') then
       execute 'alter publication supabase_realtime add table public.monthly_bills';
+    end if;
+
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'receivable_items') then
+      execute 'alter publication supabase_realtime add table public.receivable_items';
     end if;
   end if;
 end $$;
