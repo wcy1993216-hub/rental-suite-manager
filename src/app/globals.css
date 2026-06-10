@@ -675,58 +675,59 @@ a {
 }
 
 .dashboard-table {
-  min-width: 1424px;
+  min-width: 1360px;
+  width: 100%;
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
 }
 
 .dashboard-col-room {
-  width: 116px;
+  width: 96px;
 }
 
 .dashboard-col-tenant {
-  width: 132px;
+  width: 108px;
 }
 
 .dashboard-col-money {
-  width: 96px;
+  width: auto;
 }
 
 .dashboard-col-fixed-fee {
-  width: 104px;
+  width: auto;
 }
 
 .dashboard-col-input-fee {
-  width: 84px;
+  width: auto;
 }
 
 .dashboard-col-water {
-  width: 96px;
+  width: auto;
 }
 
 .dashboard-col-total {
-  width: 116px;
+  width: auto;
 }
 
 .dashboard-col-status {
-  width: 94px;
+  width: auto;
 }
 
 .dashboard-col-date {
-  width: 96px;
+  width: auto;
 }
 
 .dashboard-col-transfer {
-  width: 92px;
+  width: auto;
 }
 
 .dashboard-col-note {
-  width: 150px;
+  width: auto;
 }
 
 .dashboard-col-actions {
-  width: 160px;
+  width: auto;
 }
 
 .dashboard-sticky-room,
@@ -745,7 +746,7 @@ a {
 }
 
 .dashboard-sticky-tenant {
-  left: 116px;
+  left: 96px;
   box-shadow: 1px 0 0 var(--line);
 }
 
@@ -790,8 +791,9 @@ a {
 
 .dashboard-table .table-number-input {
   display: block;
-  width: 100%;
+  width: 72px;
   max-width: 100%;
+  margin-left: auto;
   min-width: 0;
   min-height: 0;
   box-sizing: border-box;
