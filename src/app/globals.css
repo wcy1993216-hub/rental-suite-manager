@@ -103,6 +103,22 @@ a {
   cursor: pointer;
 }
 
+.nav-link span:nth-child(2) {
+  flex: 1;
+}
+
+.nav-badge {
+  min-width: 24px;
+  padding: 2px 7px;
+  color: #ffffff;
+  background: var(--danger);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.4;
+  text-align: center;
+}
+
 .nav-link:hover,
 .sidebar-action:hover,
 .nav-link.active {
@@ -454,6 +470,10 @@ a {
   grid-template-columns: repeat(6, minmax(150px, 1fr));
   gap: 12px;
   margin-bottom: 14px;
+}
+
+.compact-summary-grid {
+  grid-template-columns: repeat(3, minmax(150px, 220px));
 }
 
 .summary-card {

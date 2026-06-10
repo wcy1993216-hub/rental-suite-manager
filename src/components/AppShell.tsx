@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Building2, FileSpreadsheet, History, Home, KeyRound, LogOut, Table2, Users } from "lucide-react";
+import { Building2, FileSpreadsheet, History, Home, KeyRound, LogOut, Table2, Users, Wrench } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { ROLE_LABELS } from "@/lib/permissions";
 import type { Profile, Role } from "@/lib/types";
@@ -21,6 +21,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "每月收租表", icon: <Table2 size={18} /> },
   { href: "/rooms", label: "房間管理", icon: <Building2 size={18} />, roles: ["super_admin"] },
+  { href: "/maintenance", label: "修繕管理", icon: <Wrench size={18} />, roles: ["super_admin"] },
   { href: "/import", label: "Excel 匯入", icon: <FileSpreadsheet size={18} />, roles: ["super_admin"] },
   { href: "/users", label: "帳號權限", icon: <Users size={18} />, roles: ["super_admin"] },
   { href: "/logs", label: "操作記錄", icon: <History size={18} />, roles: ["super_admin"] }
@@ -32,6 +33,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const supabase = getSupabaseBrowserClient();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [openMaintenanceCount, setOpenMaintenanceCount] = useState(0);
 
   useEffect(() => {
     if (!supabase || pathname === "/login") return;
@@ -75,6 +77,37 @@ export function AppShell({ children }: { children: ReactNode }) {
     router.replace("/login");
   }
 
+  useEffect(() => {
+    if (!supabase || profile?.role !== "super_admin" || pathname === "/login") {
+      setOpenMaintenanceCount(0);
+      return;
+    }
+
+    const client = supabase;
+    let mounted = true;
+
+    async function loadOpenMaintenanceCount() {
+      const { count } = await client
+        .from("maintenance_records")
+        .select("id", { count: "exact", head: true })
+        .in("status", ["pending", "processing"]);
+
+      if (mounted) {
+        setOpenMaintenanceCount(count ?? 0);
+      }
+    }
+
+    void loadOpenMaintenanceCount();
+    const timer = window.setInterval(() => {
+      void loadOpenMaintenanceCount();
+    }, 30000);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
+  }, [pathname, profile?.role, supabase]);
+
   if (pathname === "/login") {
     return <main className="auth-page">{children}</main>;
   }
@@ -98,6 +131,9 @@ export function AppShell({ children }: { children: ReactNode }) {
               >
                 {item.icon}
                 <span>{item.label}</span>
+                {item.href === "/maintenance" && openMaintenanceCount > 0 ? (
+                  <span className="nav-badge">{openMaintenanceCount}</span>
+                ) : null}
               </Link>
             ))}
         </nav>

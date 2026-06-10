@@ -28,6 +28,7 @@ npm run dev
 - `/dashboard`：每月收租表
 - `/rooms/[roomId]`：房間詳情
 - `/rooms`：房間管理
+- `/maintenance`：修繕管理
 - `/import`：Excel 匯入
 - `/users`：帳號權限
 
