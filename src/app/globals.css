@@ -400,6 +400,38 @@ a {
   border-radius: 8px;
 }
 
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 4px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pagination-meta,
+.pagination-page,
+.pagination-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.pagination-page {
+  min-width: 86px;
+  justify-content: center;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.compact-select {
+  min-width: 76px;
+  min-height: 34px;
+  padding: 5px 8px;
+}
+
 .data-table {
   width: 100%;
   min-width: 1120px;

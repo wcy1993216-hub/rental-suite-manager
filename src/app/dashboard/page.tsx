@@ -4,10 +4,11 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import * as XLSX from "xlsx";
-import { Banknote, Download, Eye, Landmark, Lock, RefreshCw, RotateCcw, Search, Undo2, Unlock } from "lucide-react";
+import { Banknote, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, Eye, Landmark, Lock, RefreshCw, RotateCcw, Search, Undo2, Unlock } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { Modal } from "@/components/Modal";
 import { PaymentMethodBadge, PaymentStatusBadge } from "@/components/StatusBadge";
+import { useDashboardPagination } from "@/hooks/useDashboardPagination";
 import { logAuditAction } from "@/lib/audit";
 import { formatCurrency, formatDate, getCurrentMonthInputValue, monthInputToBillMonth, todayString } from "@/lib/format";
 import { canConfirmCash, canManageEverything, canRegisterBankTransfer, PAYMENT_METHOD_LABELS, PAYMENT_STATUS_LABELS } from "@/lib/permissions";
@@ -463,11 +464,33 @@ function DashboardContent({ role }: { role: Role }) {
     });
   }, [building, keyword, method, rows, status]);
 
+  const {
+    currentPage,
+    endItem,
+    pageItems: paginatedRows,
+    pageSize,
+    setCurrentPage,
+    setPageSize,
+    startItem,
+    totalItems,
+    totalPages
+  } = useDashboardPagination(filteredRows, 50);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [building, keyword, method, month, pageSize, setCurrentPage, status]);
+
   useEffect(() => {
     if (!focusedRoomId || filteredRows.length === 0) return;
 
-    const hasFocusedRow = filteredRows.some((row) => row.room_id === focusedRoomId);
-    if (!hasFocusedRow) return;
+    const focusedIndex = filteredRows.findIndex((row) => row.room_id === focusedRoomId);
+    if (focusedIndex < 0) return;
+
+    const focusedPage = Math.floor(focusedIndex / pageSize) + 1;
+    if (currentPage !== focusedPage) {
+      setCurrentPage(focusedPage);
+      return;
+    }
 
     const timer = setTimeout(() => {
       const targetRow = document.querySelector<HTMLTableRowElement>(`[data-room-row-id="${focusedRoomId}"]`);
@@ -476,7 +499,7 @@ function DashboardContent({ role }: { role: Role }) {
     }, 180);
 
     return () => clearTimeout(timer);
-  }, [filteredRows, focusedRoomId]);
+  }, [currentPage, filteredRows, focusedRoomId, pageSize, setCurrentPage]);
 
   const summary = useMemo(() => {
     const total = filteredRows.reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0);
@@ -1162,7 +1185,7 @@ function DashboardContent({ role }: { role: Role }) {
                 <td colSpan={13}>本月尚未建立帳單，請按「產生本月帳單」。</td>
               </tr>
             ) : (
-              filteredRows.map((row) => (
+              paginatedRows.map((row) => (
                 <tr
                   key={row.id}
                   data-room-row-id={row.room_id}
@@ -1265,6 +1288,19 @@ function DashboardContent({ role }: { role: Role }) {
         </table>
       </div>
 
+      {filteredRows.length > 0 ? (
+        <DashboardPaginationControls
+          currentPage={currentPage}
+          endItem={endItem}
+          pageSize={pageSize}
+          setCurrentPage={setCurrentPage}
+          setPageSize={setPageSize}
+          startItem={startItem}
+          totalItems={totalItems}
+          totalPages={totalPages}
+        />
+      ) : null}
+
       {bankBill ? (
         <BankTransferDialog
           bill={bankBill}
@@ -1284,6 +1320,60 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
     <div className="summary-card">
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function DashboardPaginationControls({
+  currentPage,
+  endItem,
+  pageSize,
+  setCurrentPage,
+  setPageSize,
+  startItem,
+  totalItems,
+  totalPages
+}: {
+  currentPage: number;
+  endItem: number;
+  pageSize: number;
+  setCurrentPage: (page: number) => void;
+  setPageSize: (size: number) => void;
+  startItem: number;
+  totalItems: number;
+  totalPages: number;
+}) {
+  return (
+    <div className="pagination-bar">
+      <div className="pagination-meta">
+        顯示 {startItem}-{endItem} 筆，共 {totalItems} 筆
+      </div>
+      <div className="toolbar">
+        <label className="pagination-size">
+          每頁
+          <select className="select compact-select" value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+            <option value={200}>200</option>
+          </select>
+        </label>
+        <button className="icon-button" type="button" onClick={() => setCurrentPage(1)} disabled={currentPage <= 1} title="第一頁">
+          <ChevronsLeft size={17} />
+        </button>
+        <button className="icon-button" type="button" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage <= 1} title="上一頁">
+          <ChevronLeft size={17} />
+        </button>
+        <span className="pagination-page">
+          第 {currentPage} / {totalPages} 頁
+        </span>
+        <button className="icon-button" type="button" onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage >= totalPages} title="下一頁">
+          <ChevronRight size={17} />
+        </button>
+        <button className="icon-button" type="button" onClick={() => setCurrentPage(totalPages)} disabled={currentPage >= totalPages} title="最後一頁">
+          <ChevronsRight size={17} />
+        </button>
+      </div>
     </div>
   );
 }
