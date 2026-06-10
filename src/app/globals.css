@@ -674,6 +674,73 @@ a {
   text-align: right;
 }
 
+.dashboard-table {
+  min-width: 1180px;
+}
+
+.dashboard-table th:nth-child(1),
+.dashboard-table td:not([colspan]):nth-child(1) {
+  position: sticky;
+  left: 0;
+  width: 108px;
+  min-width: 108px;
+  max-width: 108px;
+  z-index: 2;
+  background: var(--surface);
+}
+
+.dashboard-table th:nth-child(2),
+.dashboard-table td:not([colspan]):nth-child(2) {
+  position: sticky;
+  left: 108px;
+  width: 116px;
+  min-width: 116px;
+  max-width: 116px;
+  z-index: 2;
+  background: var(--surface);
+  box-shadow: 1px 0 0 var(--line);
+}
+
+.dashboard-table th:nth-child(1),
+.dashboard-table th:nth-child(2) {
+  z-index: 3;
+  background: #ecebe4;
+}
+
+.dashboard-table tbody tr:hover td:not([colspan]):nth-child(1),
+.dashboard-table tbody tr:hover td:not([colspan]):nth-child(2) {
+  background: #f4f3ed;
+}
+
+.dashboard-tenant-cell,
+.dashboard-note-cell {
+  overflow: hidden;
+}
+
+.dashboard-tenant-cell {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dashboard-note-cell {
+  width: 150px;
+  min-width: 150px;
+  max-width: 150px;
+}
+
+.note-preview {
+  display: block;
+  overflow: hidden;
+  max-width: 150px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.dashboard-table .table-number-input {
+  width: 74px;
+  padding-inline: 6px;
+}
+
 .muted {
   color: var(--muted);
 }

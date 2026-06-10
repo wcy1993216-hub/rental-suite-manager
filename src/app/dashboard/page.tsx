@@ -1309,8 +1309,8 @@ function DashboardContent({ role }: { role: Role }) {
       {notice ? <div className="notice" style={{ marginBottom: 14 }}>{notice}</div> : null}
       {error ? <div className="error-box" style={{ marginBottom: 14 }}>{error}</div> : null}
 
-      <div className="table-shell">
-        <table className="data-table">
+      <div className="table-shell dashboard-table-shell">
+        <table className="data-table dashboard-table">
           <thead>
             <tr>
               <th>房號</th>
@@ -1354,7 +1354,7 @@ function DashboardContent({ role }: { role: Role }) {
                     <strong>{row.rooms?.room_number ?? "-"}</strong>
                     <div className="muted">{getRoomBuilding(row.rooms) || "未設定棟別"}</div>
                   </td>
-                  <td>{row.contracts?.tenants?.name ?? (row.payment_status === "vacant" || row.note === "空房" ? "未出租" : "-")}</td>
+                  <td className="dashboard-tenant-cell">{row.contracts?.tenants?.name ?? (row.payment_status === "vacant" || row.note === "空房" ? "未出租" : "-")}</td>
                   <td className="number-cell">{formatCurrency(row.rent_amount)}</td>
                   <td className="number-cell">{formatCurrency(row.recurring_fee ?? 0)}</td>
                   <td className="number-cell">
@@ -1415,7 +1415,11 @@ function DashboardContent({ role }: { role: Role }) {
                   <td><PaymentStatusBadge status={row.payment_status} /></td>
                   <td>{formatDate(row.paid_date)}</td>
                   <td>{row.transfer_last5 || "-"}</td>
-                  <td>{row.note || "-"}</td>
+                  <td className="dashboard-note-cell">
+                    <span className="note-preview" title={row.note || undefined}>
+                      {row.note || "-"}
+                    </span>
+                  </td>
                   <td>
                     <div className="toolbar">
                       <Link className="icon-button" href={`/rooms/${row.room_id}${currentDashboardParams ? `?return=${encodeURIComponent(`/dashboard?${currentDashboardParams}`)}` : ""}`} title="詳情">
