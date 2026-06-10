@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
-import { formatDate } from "@/lib/format";
+import { formatDate, monthInputToBillMonth } from "@/lib/format";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { AuditLog } from "@/lib/types";
+
+const LOG_PAGE_SIZE = 100;
 
 const ACTION_LABELS: Record<string, string> = {
   lock_month: "鎖定月份",
@@ -60,6 +62,10 @@ export default function LogsPage() {
 function LogsContent() {
   const supabase = getSupabaseBrowserClient();
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [monthFilter, setMonthFilter] = useState("");
+  const [actionFilter, setActionFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -68,28 +74,54 @@ function LogsContent() {
     setLoading(true);
     setError("");
 
-    const { data, error: queryError } = await supabase
+    let query = supabase
       .from("audit_logs")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(300);
+      .select("*", { count: "exact" })
+      .order("created_at", { ascending: false });
+
+    if (monthFilter) {
+      query = query.eq("bill_month", monthInputToBillMonth(monthFilter));
+    }
+
+    if (actionFilter !== "all") {
+      query = query.eq("action", actionFilter);
+    }
+
+    const from = (currentPage - 1) * LOG_PAGE_SIZE;
+    const to = from + LOG_PAGE_SIZE - 1;
+    const { data, count, error: queryError } = await query.range(from, to);
 
     if (queryError) {
       setError(queryError.message);
       setLogs([]);
+      setTotalCount(0);
       setLoading(false);
       return;
     }
 
     setLogs((data ?? []) as AuditLog[]);
+    setTotalCount(count ?? 0);
     setLoading(false);
-  }, [supabase]);
+  }, [actionFilter, currentPage, monthFilter, supabase]);
 
   useEffect(() => {
     void loadLogs();
   }, [loadLogs]);
 
-  const totalText = useMemo(() => `最近 ${logs.length} 筆`, [logs.length]);
+  const totalPages = Math.max(1, Math.ceil(totalCount / LOG_PAGE_SIZE));
+  const startItem = totalCount === 0 ? 0 : (currentPage - 1) * LOG_PAGE_SIZE + 1;
+  const endItem = Math.min(currentPage * LOG_PAGE_SIZE, totalCount);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const totalText = useMemo(() => {
+    if (totalCount === 0) return "共 0 筆";
+    return `第 ${startItem}-${endItem} 筆，共 ${totalCount} 筆`;
+  }, [endItem, startItem, totalCount]);
 
   return (
     <>
@@ -108,6 +140,55 @@ function LogsContent() {
 
       {error ? <div className="error-box" style={{ marginBottom: 14 }}>{error}</div> : null}
 
+      <div className="filter-bar">
+        <div className="field">
+          <label htmlFor="log-month">月份</label>
+          <input
+            id="log-month"
+            className="input"
+            type="month"
+            value={monthFilter}
+            onChange={(event) => {
+              setMonthFilter(event.target.value);
+              setCurrentPage(1);
+            }}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="log-action">動作</label>
+          <select
+            id="log-action"
+            className="select"
+            value={actionFilter}
+            onChange={(event) => {
+              setActionFilter(event.target.value);
+              setCurrentPage(1);
+            }}
+          >
+            <option value="all">全部動作</option>
+            {Object.entries(ACTION_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="toolbar align-end">
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => {
+              setMonthFilter("");
+              setActionFilter("all");
+              setCurrentPage(1);
+            }}
+            disabled={loading && logs.length === 0}
+          >
+            清除篩選
+          </button>
+        </div>
+      </div>
+
       <div className="table-shell">
         <table className="data-table">
           <thead>
@@ -122,7 +203,7 @@ function LogsContent() {
             </tr>
           </thead>
           <tbody>
-            {loading ? (
+            {loading && logs.length === 0 ? (
               <tr>
                 <td colSpan={7}>載入中...</td>
               </tr>
@@ -147,7 +228,18 @@ function LogsContent() {
         </table>
       </div>
 
-      <p className="muted" style={{ marginTop: 12 }}>{totalText}</p>
+      <div className="pagination-bar">
+        <span className="pagination-meta">{totalText}</span>
+        <div className="pagination-meta">
+          <button className="icon-button" type="button" onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={currentPage <= 1 || loading}>
+            <ChevronLeft size={17} />
+          </button>
+          <span className="pagination-page">{currentPage} / {totalPages}</span>
+          <button className="icon-button" type="button" onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={currentPage >= totalPages || loading}>
+            <ChevronRight size={17} />
+          </button>
+        </div>
+      </div>
     </>
   );
 }

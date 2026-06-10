@@ -196,6 +196,10 @@ a {
   flex-wrap: wrap;
 }
 
+.align-end {
+  align-self: end;
+}
+
 .sync-pill,
 .row-sync-text {
   display: inline-flex;
