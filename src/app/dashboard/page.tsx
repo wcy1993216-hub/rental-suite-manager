@@ -18,7 +18,6 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { ContractWithTenant, DashboardBill, MonthlyLock, PaymentMethod, PaymentStatus, RentPaymentCycle, Room, Role } from "@/lib/types";
 
 type StatusFilter = "all" | PaymentStatus;
-type MethodFilter = "all" | PaymentMethod;
 type SyncStatus = "idle" | "syncing" | "synced";
 
 const DASHBOARD_CACHE_PREFIX = "rental-dashboard-rows";
@@ -74,10 +73,6 @@ const RENT_PAYMENT_CYCLE_LABELS: Record<RentPaymentCycle, string> = {
 
 function isPaymentStatus(value: string | null): value is PaymentStatus {
   return Boolean(value && value in PAYMENT_STATUS_LABELS);
-}
-
-function isPaymentMethod(value: string | null): value is PaymentMethod {
-  return Boolean(value && value in PAYMENT_METHOD_LABELS);
 }
 
 function isMonthWithinContract(monthDate: string, contract: ContractWithTenant) {
@@ -241,11 +236,9 @@ function DashboardContent({ role }: { role: Role }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const statusParam = searchParams.get("status");
-  const methodParam = searchParams.get("method");
   const [month, setMonth] = useState(searchParams.get("month") || getCurrentMonthInputValue());
   const [building, setBuilding] = useState(searchParams.get("building") || "all");
   const [status, setStatus] = useState<StatusFilter>(isPaymentStatus(statusParam) ? statusParam : "all");
-  const [method, setMethod] = useState<MethodFilter>(isPaymentMethod(methodParam) ? methodParam : "all");
   const [keyword, setKeyword] = useState(searchParams.get("keyword") || "");
   const [rows, setRows] = useState<DashboardBill[]>([]);
   const [loading, setLoading] = useState(false);
@@ -449,7 +442,6 @@ function DashboardContent({ role }: { role: Role }) {
     if (month) nextParams.set("month", month);
     if (building !== "all") nextParams.set("building", building);
     if (status !== "all") nextParams.set("status", status);
-    if (method !== "all") nextParams.set("method", method);
     if (keyword.trim()) nextParams.set("keyword", keyword.trim());
 
     const nextUrl = nextParams.toString() ? `${pathname}?${nextParams.toString()}` : pathname;
@@ -457,7 +449,7 @@ function DashboardContent({ role }: { role: Role }) {
     if (nextUrl !== currentUrl) {
       router.replace(nextUrl, { scroll: false });
     }
-  }, [building, keyword, method, month, pathname, router, searchParams, status]);
+  }, [building, keyword, month, pathname, router, searchParams, status]);
 
   const queueRealtimeSync = useCallback((payload?: { table?: string; new?: { id?: string }; old?: { id?: string } }) => {
     const changedId = payload?.new?.id ?? payload?.old?.id;
@@ -497,10 +489,9 @@ function DashboardContent({ role }: { role: Role }) {
     if (month) params.set("month", month);
     if (building !== "all") params.set("building", building);
     if (status !== "all") params.set("status", status);
-    if (method !== "all") params.set("method", method);
     if (keyword.trim()) params.set("keyword", keyword.trim());
     return params.toString();
-  }, [building, keyword, method, month, status]);
+  }, [building, keyword, month, status]);
 
   const buildingCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -546,14 +537,13 @@ function DashboardContent({ role }: { role: Role }) {
       const roomNumber = row.rooms?.room_number ?? "";
       const matchBuilding = building === "all" || getRoomBuilding(row.rooms) === building;
       const matchStatus = status === "all" || row.payment_status === status;
-      const matchMethod = method === "all" || row.payment_method === method;
       const matchKeyword =
         loweredKeyword.length === 0 ||
         tenantName.toLowerCase().includes(loweredKeyword) ||
         roomNumber.toLowerCase().includes(loweredKeyword);
-      return matchBuilding && matchStatus && matchMethod && matchKeyword;
+      return matchBuilding && matchStatus && matchKeyword;
     });
-  }, [building, keyword, method, rows, status]);
+  }, [building, keyword, rows, status]);
 
   const {
     currentPage,
@@ -569,7 +559,7 @@ function DashboardContent({ role }: { role: Role }) {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [building, keyword, method, month, pageSize, setCurrentPage, status]);
+  }, [building, keyword, month, pageSize, setCurrentPage, status]);
 
   useEffect(() => {
     if (!focusedRoomId || filteredRows.length === 0) return;
@@ -1260,18 +1250,6 @@ function DashboardContent({ role }: { role: Role }) {
           <select id="status" className="select" value={status} onChange={(event) => setStatus(event.target.value as StatusFilter)}>
             <option value="all">全部狀態</option>
             {Object.entries(PAYMENT_STATUS_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="field">
-          <label htmlFor="method">付款方式</label>
-          <select id="method" className="select" value={method} onChange={(event) => setMethod(event.target.value as MethodFilter)}>
-            <option value="all">全部方式</option>
-            {Object.entries(PAYMENT_METHOD_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
