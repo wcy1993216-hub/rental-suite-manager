@@ -10,6 +10,7 @@ import { Modal } from "@/components/Modal";
 import { PaymentMethodBadge, PaymentStatusBadge } from "@/components/StatusBadge";
 import { useDashboardPagination } from "@/hooks/useDashboardPagination";
 import { logAuditAction } from "@/lib/audit";
+import { getActiveContractBillNote } from "@/lib/billNotes";
 import { formatCurrency, formatDate, getCurrentMonthInputValue, monthInputToBillMonth, todayString } from "@/lib/format";
 import { canConfirmCash, canManageEverything, canRegisterBankTransfer, PAYMENT_METHOD_LABELS, PAYMENT_STATUS_LABELS } from "@/lib/permissions";
 import { getRoomBuilding } from "@/lib/rooms";
@@ -48,7 +49,8 @@ function normalizeBillRows(data: unknown[] | null): DashboardBill[] {
     return {
       ...row,
       rooms: Array.isArray(row.rooms) ? row.rooms[0] ?? null : row.rooms ?? null,
-      contracts: Array.isArray(row.contracts) ? row.contracts[0] ?? null : row.contracts ?? null
+      contracts: Array.isArray(row.contracts) ? row.contracts[0] ?? null : row.contracts ?? null,
+      note: row.contract_id || row.contracts ? getActiveContractBillNote(row.note, row.payment_status) : row.note
     };
   });
 }

@@ -7,6 +7,7 @@ import { ArrowLeft, LogOut, Pencil, Plus, RefreshCw, UserRoundCog, Wrench } from
 import { AuthGuard } from "@/components/AuthGuard";
 import { Modal } from "@/components/Modal";
 import { MaintenanceStatusBadge, PaymentMethodBadge, PaymentStatusBadge, RoomStatusBadge } from "@/components/StatusBadge";
+import { getActiveContractBillNote } from "@/lib/billNotes";
 import { formatCurrency, formatDate, todayString } from "@/lib/format";
 import { canEditMaintenance, canManageEverything } from "@/lib/permissions";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -118,6 +119,7 @@ async function syncRoomBillForMonth(
   const totalAmount = rentAmount + recurringFee + electricityFee + miscFee;
   const keepPaymentState = existing ? paidStatuses.includes(existing.payment_status) : false;
   const preservedBill = keepPaymentState ? existing : null;
+  const nextPaymentStatus = preservedBill ? preservedBill.payment_status : rentPrepaid && totalAmount === 0 ? "rent_prepaid" : "unpaid";
   const payload = {
     room_id: roomId,
     contract_id: activeContract.id,
@@ -128,11 +130,11 @@ async function syncRoomBillForMonth(
     misc_fee: miscFee,
     total_amount: totalAmount,
     payment_method: preservedBill ? preservedBill.payment_method : "none",
-    payment_status: preservedBill ? preservedBill.payment_status : rentPrepaid && totalAmount === 0 ? "rent_prepaid" : "unpaid",
+    payment_status: nextPaymentStatus,
     paid_date: preservedBill ? preservedBill.paid_date : buildPaymentDueDate(billMonth, activeContract.payment_due_day),
     transfer_last5: preservedBill ? preservedBill.transfer_last5 : null,
     transfer_amount: preservedBill ? preservedBill.transfer_amount : null,
-    note: rentPrepaid ? `房租已${RENT_PAYMENT_CYCLE_LABELS[activeContract.rent_payment_cycle ?? "monthly"]}至 ${formatDate(activeContract.rent_paid_until)}` : existing?.note ?? null
+    note: rentPrepaid ? `房租已${RENT_PAYMENT_CYCLE_LABELS[activeContract.rent_payment_cycle ?? "monthly"]}至 ${formatDate(activeContract.rent_paid_until)}` : getActiveContractBillNote(existing?.note, nextPaymentStatus)
   };
 
   const { error } = await supabase.from("monthly_bills").upsert(payload, { onConflict: "room_id,bill_month" });
