@@ -429,20 +429,24 @@ a {
   background: #f4f3ed;
 }
 
-.data-table tbody tr.row-cash-paid {
+.data-table tbody tr.row-cash-paid,
+.data-table tbody tr.row-cash-paid td {
   background: #f0fdf4;
 }
 
-.data-table tbody tr.row-cash-paid:hover {
+.data-table tbody tr.row-cash-paid:hover,
+.data-table tbody tr.row-cash-paid:hover td {
   background: #e7f9ed;
 }
 
-.data-table tbody tr.row-bank-paid {
-  background: #eef6ff;
+.data-table tbody tr.row-bank-paid,
+.data-table tbody tr.row-bank-paid td {
+  background: #e6f2ff;
 }
 
-.data-table tbody tr.row-bank-paid:hover {
-  background: #e0efff;
+.data-table tbody tr.row-bank-paid:hover,
+.data-table tbody tr.row-bank-paid:hover td {
+  background: #d8ebff;
 }
 
 .number-cell {
