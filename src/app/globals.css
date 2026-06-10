@@ -675,7 +675,7 @@ a {
 }
 
 .dashboard-table {
-  min-width: 1360px;
+  min-width: 1280px;
   width: 100%;
   table-layout: fixed;
   border-collapse: separate;
@@ -707,18 +707,14 @@ a {
 }
 
 .dashboard-col-total {
-  width: auto;
+  width: 128px;
 }
 
 .dashboard-col-status {
-  width: auto;
+  width: 118px;
 }
 
 .dashboard-col-date {
-  width: auto;
-}
-
-.dashboard-col-transfer {
   width: auto;
 }
 
@@ -762,11 +758,18 @@ a {
 }
 
 .dashboard-tenant-cell,
-.dashboard-transfer-cell,
 .dashboard-note-cell {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.dashboard-total-cell {
+  padding-right: 18px !important;
+}
+
+.dashboard-status-cell {
+  padding-left: 18px !important;
 }
 
 .dashboard-note-cell {

@@ -1300,7 +1300,6 @@ function DashboardContent({ role }: { role: Role }) {
             <col className="dashboard-col-total" />
             <col className="dashboard-col-status" />
             <col className="dashboard-col-date" />
-            <col className="dashboard-col-transfer" />
             <col className="dashboard-col-note" />
             <col className="dashboard-col-actions" />
           </colgroup>
@@ -1313,10 +1312,9 @@ function DashboardContent({ role }: { role: Role }) {
               <th className="number-cell">電費</th>
               <th className="number-cell">水費/公電</th>
               <th className="number-cell">其他</th>
-              <th className="number-cell">當月應繳總額</th>
-              <th>狀態</th>
+              <th className="number-cell dashboard-total-cell">當月應繳總額</th>
+              <th className="dashboard-status-cell">狀態</th>
               <th>繳款日</th>
-              <th>匯款後五碼</th>
               <th>備註</th>
               <th>詳情</th>
             </tr>
@@ -1324,11 +1322,11 @@ function DashboardContent({ role }: { role: Role }) {
           <tbody>
             {initialLoading && rows.length === 0 ? (
               <tr>
-                <td colSpan={13}>載入中...</td>
+                <td colSpan={12}>載入中...</td>
               </tr>
             ) : filteredRows.length === 0 ? (
               <tr>
-                <td colSpan={13}>本月尚未建立帳單，請按「產生本月帳單」。</td>
+                <td colSpan={12}>本月尚未建立帳單，請按「產生本月帳單」。</td>
               </tr>
             ) : (
               paginatedRows.map((row) => (
@@ -1409,10 +1407,9 @@ function DashboardContent({ role }: { role: Role }) {
                       formatCurrency(row.misc_fee)
                     )}
                   </td>
-                  <td className="number-cell">{formatCurrency(row.total_amount)}</td>
-                  <td><PaymentStatusBadge status={row.payment_status} /></td>
+                  <td className="number-cell dashboard-total-cell">{formatCurrency(row.total_amount)}</td>
+                  <td className="dashboard-status-cell"><PaymentStatusBadge status={row.payment_status} /></td>
                   <td>{formatDate(row.paid_date)}</td>
-                  <td className="dashboard-transfer-cell">{row.transfer_last5 || "-"}</td>
                   <td className="dashboard-note-cell">
                     <span className="note-preview" title={row.note || undefined}>
                       {row.note || "-"}
