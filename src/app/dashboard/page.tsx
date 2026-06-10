@@ -1355,7 +1355,7 @@ function DashboardContent({ role }: { role: Role }) {
                   </td>
                   <td className="number-cell">{formatCurrency(row.rent_amount)}</td>
                   <td className="number-cell">{formatCurrency(row.recurring_fee ?? 0)}</td>
-                  <td className="number-cell">
+                  <td className="number-cell dashboard-input-cell">
                     {canManageEverything(role) ? (
                       <input
                         className="input table-number-input"
@@ -1373,7 +1373,7 @@ function DashboardContent({ role }: { role: Role }) {
                       formatCurrency(row.electricity_fee)
                     )}
                   </td>
-                  <td className="number-cell">
+                  <td className="number-cell dashboard-input-cell">
                     {canManageEverything(role) ? (
                       <input
                         className="input table-number-input"
@@ -1391,7 +1391,7 @@ function DashboardContent({ role }: { role: Role }) {
                       formatCurrency(row.water_common_electricity_fee ?? 0)
                     )}
                   </td>
-                  <td className="number-cell">
+                  <td className="number-cell dashboard-input-cell">
                     {canManageEverything(role) ? (
                       <input
                         className="input table-number-input"
