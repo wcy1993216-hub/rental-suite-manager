@@ -17,6 +17,7 @@ interface ImportRow {
   tenantName: string;
   rentAmount: number;
   electricityFee: number;
+  waterCommonElectricityFee: number;
   miscFee: number;
   totalAmount: number;
   paymentDueDay: number | null;
@@ -42,8 +43,9 @@ const aliases = {
   roomNumber: ["房號", "房間", "房間", "room_number", "room"],
   tenantName: ["租客姓名", "租客", "姓名", "tenant", "tenant_name"],
   rentAmount: ["房租", "租金", "月租", "rent", "rent_amount"],
-  electricityFee: ["電費", "電費", "electricity_fee"],
-  miscFee: ["雜支", "雜項", "misc_fee"],
+  electricityFee: ["電費", "电费", "electricity_fee"],
+  waterCommonElectricityFee: ["水費/公電", "水费/公电", "水費", "水费", "公電", "公电", "水电", "水電", "water_common_electricity_fee"],
+  miscFee: ["其他", "其他項目", "其他项目", "雜支", "雜項", "other_fee", "misc_fee"],
   totalAmount: ["當月應繳總額", "應繳總額", "應收總額", "應收", "total_amount"],
   rentPaymentCycle: ["房租週期", "繳費週期", "付款週期", "週期", "租金週期", "rent_payment_cycle"],
   rentPaidUntil: ["預繳房租至", "房租已繳至", "已繳至", "預繳至", "rent_paid_until"],
@@ -150,6 +152,7 @@ function parseRows(sheetRows: Record<string, unknown>[], selectedMonth: string, 
     .map((row, index): ImportRow => {
       const rentAmount = parseMoney(pick(row, aliases.rentAmount));
       const electricityFee = parseMoney(pick(row, aliases.electricityFee));
+      const waterCommonElectricityFee = parseMoney(pick(row, aliases.waterCommonElectricityFee));
       const miscFee = parseMoney(pick(row, aliases.miscFee));
       const transferLast5 = normalizeText(pick(row, aliases.transferLast5));
       const statusText = normalizeText(pick(row, aliases.statusText));
@@ -185,8 +188,9 @@ function parseRows(sheetRows: Record<string, unknown>[], selectedMonth: string, 
         tenantName,
         rentAmount,
         electricityFee,
+        waterCommonElectricityFee,
         miscFee,
-        totalAmount: rentAmount + miscFee + electricityFee,
+        totalAmount: rentAmount + electricityFee + waterCommonElectricityFee + miscFee,
         paymentDueDay,
         rentPaymentCycle,
         rentPaidUntil: inferredRentPaidUntil,
@@ -402,6 +406,7 @@ function ImportContent() {
             rent_amount: row.tenantName ? row.rentAmount : 0,
             recurring_fee: 0,
             electricity_fee: row.tenantName ? row.electricityFee : 0,
+            water_common_electricity_fee: row.tenantName ? row.waterCommonElectricityFee : 0,
             misc_fee: row.tenantName ? row.miscFee : 0,
             total_amount: row.tenantName ? row.totalAmount : 0,
             payment_method: row.paymentMethod,
@@ -480,8 +485,9 @@ function ImportContent() {
                   <th>房號</th>
                   <th>租客姓名</th>
                   <th className="number-cell">房租</th>
-                  <th className="number-cell">雜支</th>
                   <th className="number-cell">電費</th>
+                  <th className="number-cell">水費/公電</th>
+                  <th className="number-cell">其他</th>
                   <th className="number-cell">當月應繳總額</th>
                   <th>房租週期</th>
                   <th>預繳房租至</th>
@@ -499,8 +505,9 @@ function ImportContent() {
                     <td>{row.roomNumber}</td>
                     <td>{row.tenantName || "-"}</td>
                     <td className="number-cell">{formatCurrency(row.rentAmount)}</td>
-                    <td className="number-cell">{formatCurrency(row.miscFee)}</td>
                     <td className="number-cell">{formatCurrency(row.electricityFee)}</td>
+                    <td className="number-cell">{formatCurrency(row.waterCommonElectricityFee)}</td>
+                    <td className="number-cell">{formatCurrency(row.miscFee)}</td>
                     <td className="number-cell">{formatCurrency(row.totalAmount)}</td>
                     <td>{row.rentPaymentCycle === "annual" ? "年繳" : row.rentPaymentCycle === "semiannual" ? "半年繳" : "月繳"}</td>
                     <td>{row.rentPaidUntil || "-"}</td>

@@ -107,6 +107,7 @@ create table if not exists public.monthly_bills (
   rent_amount numeric(12, 2) not null default 0,
   recurring_fee numeric(12, 2) not null default 0,
   electricity_fee numeric(12, 2) not null default 0,
+  water_common_electricity_fee numeric(12, 2) not null default 0,
   misc_fee numeric(12, 2) not null default 0,
   total_amount numeric(12, 2) not null default 0,
   payment_method public.payment_method not null default 'none',
@@ -122,6 +123,9 @@ create table if not exists public.monthly_bills (
 
 alter table public.monthly_bills
   add column if not exists recurring_fee numeric(12, 2) not null default 0;
+
+alter table public.monthly_bills
+  add column if not exists water_common_electricity_fee numeric(12, 2) not null default 0;
 
 create table if not exists public.maintenance_records (
   id uuid primary key default gen_random_uuid(),
@@ -271,6 +275,7 @@ alter table public.monthly_bills
     rent_amount >= 0
     and recurring_fee >= 0
     and electricity_fee >= 0
+    and water_common_electricity_fee >= 0
     and misc_fee >= 0
     and total_amount >= 0
     and (transfer_amount is null or transfer_amount >= 0)
@@ -385,6 +390,7 @@ begin
       or new.rent_amount is distinct from old.rent_amount
       or new.recurring_fee is distinct from old.recurring_fee
       or new.electricity_fee is distinct from old.electricity_fee
+      or new.water_common_electricity_fee is distinct from old.water_common_electricity_fee
       or new.misc_fee is distinct from old.misc_fee
       or new.total_amount is distinct from old.total_amount
       or new.created_at is distinct from old.created_at then
@@ -409,6 +415,7 @@ begin
       or new.rent_amount is distinct from old.rent_amount
       or new.recurring_fee is distinct from old.recurring_fee
       or new.electricity_fee is distinct from old.electricity_fee
+      or new.water_common_electricity_fee is distinct from old.water_common_electricity_fee
       or new.misc_fee is distinct from old.misc_fee
       or new.total_amount is distinct from old.total_amount
       or new.payment_method is distinct from old.payment_method

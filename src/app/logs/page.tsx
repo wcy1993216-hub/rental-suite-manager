@@ -19,7 +19,8 @@ const ACTION_LABELS: Record<string, string> = {
   update_room_bill: "更新房間帳單",
   update_maintenance_record: "更新修繕記錄",
   update_electricity_fee: "修改電費",
-  update_misc_fee: "修改雜支",
+  update_water_common_electricity_fee: "修改水費/公電",
+  update_misc_fee: "修改其他",
   confirm_cash_payment: "確認現金收款",
   register_bank_transfer: "登記匯款",
   reset_payment_status: "撤回為未收"

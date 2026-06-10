@@ -95,6 +95,7 @@ async function syncRoomBillForMonth(
   const activeContract = normalizeContract((contractData ?? [])[0]);
   const existing = existingBill as MonthlyBill | null;
   const electricityFee = Number(existing?.electricity_fee ?? 0);
+  const waterCommonElectricityFee = Number(existing?.water_common_electricity_fee ?? 0);
   const miscFee = Number(existing?.misc_fee ?? 0);
   const paidStatuses = ["bank_paid", "cash_paid", "pending", "abnormal"];
 
@@ -106,6 +107,7 @@ async function syncRoomBillForMonth(
       rent_amount: 0,
       recurring_fee: 0,
       electricity_fee: 0,
+      water_common_electricity_fee: 0,
       misc_fee: 0,
       total_amount: 0,
       payment_method: "none",
@@ -123,7 +125,7 @@ async function syncRoomBillForMonth(
   const rentPrepaid = isRentPrepaidForMonth(billMonth, activeContract);
   const rentAmount = rentPrepaid ? 0 : Number(activeContract.monthly_rent ?? 0);
   const recurringFee = Number(activeContract.cleaning_fee ?? 0) + Number(activeContract.parking_fee ?? 0);
-  const totalAmount = rentAmount + recurringFee + electricityFee + miscFee;
+  const totalAmount = rentAmount + electricityFee + waterCommonElectricityFee + recurringFee + miscFee;
   const keepPaymentState = existing ? paidStatuses.includes(existing.payment_status) : false;
   const preservedBill = keepPaymentState ? existing : null;
   const nextPaymentStatus = preservedBill ? preservedBill.payment_status : rentPrepaid && totalAmount === 0 ? "rent_prepaid" : "unpaid";
@@ -134,6 +136,7 @@ async function syncRoomBillForMonth(
     rent_amount: rentAmount,
     recurring_fee: recurringFee,
     electricity_fee: electricityFee,
+    water_common_electricity_fee: waterCommonElectricityFee,
     misc_fee: miscFee,
     total_amount: totalAmount,
     payment_method: preservedBill ? preservedBill.payment_method : "none",
@@ -1153,6 +1156,7 @@ function MoveOutDialog({
         rent_amount: 0,
         recurring_fee: 0,
         electricity_fee: 0,
+        water_common_electricity_fee: 0,
         misc_fee: 0,
         total_amount: 0,
         payment_method: "none",

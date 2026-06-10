@@ -33,6 +33,7 @@ interface MonthlyBillInsertPayload {
   rent_amount: number;
   recurring_fee: number;
   electricity_fee: number;
+  water_common_electricity_fee: number;
   misc_fee: number;
   total_amount: number;
   payment_method: PaymentMethod;
@@ -99,6 +100,22 @@ function buildPaymentDueDate(billMonth: string, dueDay: number | null | undefine
   return `${yearText}-${monthText}-${String(day).padStart(2, "0")}`;
 }
 
+function calculateBillTotal(bill: {
+  rent_amount?: number | null;
+  recurring_fee?: number | null;
+  electricity_fee?: number | null;
+  water_common_electricity_fee?: number | null;
+  misc_fee?: number | null;
+}) {
+  return (
+    Number(bill.rent_amount ?? 0) +
+    Number(bill.electricity_fee ?? 0) +
+    Number(bill.water_common_electricity_fee ?? 0) +
+    Number(bill.recurring_fee ?? 0) +
+    Number(bill.misc_fee ?? 0)
+  );
+}
+
 function createVacantBillPayload(roomId: string, billMonth: string): MonthlyBillInsertPayload {
   return {
     room_id: roomId,
@@ -107,6 +124,7 @@ function createVacantBillPayload(roomId: string, billMonth: string): MonthlyBill
     rent_amount: 0,
     recurring_fee: 0,
     electricity_fee: 0,
+    water_common_electricity_fee: 0,
     misc_fee: 0,
     total_amount: 0,
     payment_method: "none" as PaymentMethod,
@@ -132,6 +150,7 @@ function createContractBillPayload(contract: ContractWithTenant, billMonth: stri
     rent_amount: rentAmount,
     recurring_fee: recurringFee,
     electricity_fee: 0,
+    water_common_electricity_fee: 0,
     misc_fee: 0,
     total_amount: totalAmount,
     payment_method: "none" as PaymentMethod,
@@ -797,7 +816,7 @@ function DashboardContent({ role }: { role: Role }) {
       .from("monthly_bills")
       .update({
         electricity_fee: nextElectricityFee,
-        total_amount: Number(bill.rent_amount ?? 0) + Number(bill.recurring_fee ?? 0) + Number(bill.misc_fee ?? 0) + nextElectricityFee
+        total_amount: calculateBillTotal({ ...bill, electricity_fee: nextElectricityFee })
       })
       .eq("id", bill.id);
 
@@ -823,6 +842,45 @@ function DashboardContent({ role }: { role: Role }) {
     setSavingBillId(null);
   }
 
+  async function updateWaterCommonElectricityFee(bill: DashboardBill, value: string) {
+    if (!supabase || !canManageEverything(role)) return;
+    if (!ensureMonthUnlocked()) return;
+    const nextWaterCommonElectricityFee = Number(value) || 0;
+    if (nextWaterCommonElectricityFee === Number(bill.water_common_electricity_fee ?? 0)) return;
+
+    setSavingBillId(bill.id);
+    setError("");
+
+    const { error: updateError } = await supabase
+      .from("monthly_bills")
+      .update({
+        water_common_electricity_fee: nextWaterCommonElectricityFee,
+        total_amount: calculateBillTotal({ ...bill, water_common_electricity_fee: nextWaterCommonElectricityFee })
+      })
+      .eq("id", bill.id);
+
+    if (updateError) {
+      setError(updateError.message);
+      setSavingBillId(null);
+      return;
+    }
+
+    await logAuditAction(supabase, {
+      action: "update_water_common_electricity_fee",
+      target_table: "monthly_bills",
+      target_id: bill.id,
+      bill_month: bill.bill_month,
+      room_id: bill.room_id,
+      detail: {
+        room_number: bill.rooms?.room_number ?? null,
+        previous_value: Number(bill.water_common_electricity_fee ?? 0),
+        next_value: nextWaterCommonElectricityFee
+      }
+    });
+    await loadBills();
+    setSavingBillId(null);
+  }
+
   async function updateMiscFee(bill: DashboardBill, value: string) {
     if (!supabase || !canManageEverything(role)) return;
     if (!ensureMonthUnlocked()) return;
@@ -836,7 +894,7 @@ function DashboardContent({ role }: { role: Role }) {
       .from("monthly_bills")
       .update({
         misc_fee: nextMiscFee,
-        total_amount: Number(bill.rent_amount ?? 0) + Number(bill.recurring_fee ?? 0) + Number(bill.electricity_fee ?? 0) + nextMiscFee
+        total_amount: calculateBillTotal({ ...bill, misc_fee: nextMiscFee })
       })
       .eq("id", bill.id);
 
@@ -1094,9 +1152,10 @@ function DashboardContent({ role }: { role: Role }) {
       房號: row.rooms?.room_number ?? "",
       租客: row.contracts?.tenants?.name ?? (row.payment_status === "vacant" || row.note === "空房" ? "未出租" : ""),
       房租: Number(row.rent_amount ?? 0),
-      "清潔/車位": Number(row.recurring_fee ?? 0),
-      雜支: Number(row.misc_fee ?? 0),
       電費: Number(row.electricity_fee ?? 0),
+      "水費/公電": Number(row.water_common_electricity_fee ?? 0),
+      "清潔/車位": Number(row.recurring_fee ?? 0),
+      其他: Number(row.misc_fee ?? 0),
       當月應繳總額: Number(row.total_amount ?? 0),
       付款方式: PAYMENT_METHOD_LABELS[row.payment_method],
       狀態: PAYMENT_STATUS_LABELS[row.payment_status],
@@ -1257,9 +1316,10 @@ function DashboardContent({ role }: { role: Role }) {
               <th>房號</th>
               <th>租客</th>
               <th className="number-cell">房租</th>
-              <th className="number-cell">清潔/車位</th>
-              <th className="number-cell">雜支</th>
               <th className="number-cell">電費</th>
+              <th className="number-cell">水費/公電</th>
+              <th className="number-cell">清潔/車位</th>
+              <th className="number-cell">其他</th>
               <th className="number-cell">當月應繳總額</th>
               <th>付款方式</th>
               <th>狀態</th>
@@ -1272,11 +1332,11 @@ function DashboardContent({ role }: { role: Role }) {
           <tbody>
             {initialLoading && rows.length === 0 ? (
               <tr>
-                <td colSpan={13}>載入中...</td>
+                <td colSpan={14}>載入中...</td>
               </tr>
             ) : filteredRows.length === 0 ? (
               <tr>
-                <td colSpan={13}>本月尚未建立帳單，請按「產生本月帳單」。</td>
+                <td colSpan={14}>本月尚未建立帳單，請按「產生本月帳單」。</td>
               </tr>
             ) : (
               paginatedRows.map((row) => (
@@ -1297,6 +1357,42 @@ function DashboardContent({ role }: { role: Role }) {
                   </td>
                   <td>{row.contracts?.tenants?.name ?? (row.payment_status === "vacant" || row.note === "空房" ? "未出租" : "-")}</td>
                   <td className="number-cell">{formatCurrency(row.rent_amount)}</td>
+                  <td className="number-cell">
+                    {canManageEverything(role) ? (
+                      <input
+                        className="input table-number-input"
+                        type="number"
+                        defaultValue={Number(row.electricity_fee ?? 0)}
+                        disabled={savingBillId === row.id || Boolean(monthLock)}
+                        onBlur={(event) => updateElectricityFee(row, event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.currentTarget.blur();
+                          }
+                        }}
+                      />
+                    ) : (
+                      formatCurrency(row.electricity_fee)
+                    )}
+                  </td>
+                  <td className="number-cell">
+                    {canManageEverything(role) ? (
+                      <input
+                        className="input table-number-input"
+                        type="number"
+                        defaultValue={Number(row.water_common_electricity_fee ?? 0)}
+                        disabled={savingBillId === row.id || Boolean(monthLock)}
+                        onBlur={(event) => updateWaterCommonElectricityFee(row, event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.currentTarget.blur();
+                          }
+                        }}
+                      />
+                    ) : (
+                      formatCurrency(row.water_common_electricity_fee ?? 0)
+                    )}
+                  </td>
                   <td className="number-cell">{formatCurrency(row.recurring_fee ?? 0)}</td>
                   <td className="number-cell">
                     {canManageEverything(role) ? (
@@ -1314,24 +1410,6 @@ function DashboardContent({ role }: { role: Role }) {
                       />
                     ) : (
                       formatCurrency(row.misc_fee)
-                    )}
-                  </td>
-                  <td className="number-cell">
-                    {canManageEverything(role) ? (
-                      <input
-                        className="input table-number-input"
-                        type="number"
-                        defaultValue={Number(row.electricity_fee ?? 0)}
-                        disabled={savingBillId === row.id || Boolean(monthLock)}
-                        onBlur={(event) => updateElectricityFee(row, event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.currentTarget.blur();
-                          }
-                        }}
-                      />
-                    ) : (
-                      formatCurrency(row.electricity_fee)
                     )}
                   </td>
                   <td className="number-cell">{formatCurrency(row.total_amount)}</td>

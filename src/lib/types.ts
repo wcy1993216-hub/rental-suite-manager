@@ -66,6 +66,7 @@ export interface MonthlyBill {
   rent_amount: number;
   recurring_fee: number;
   electricity_fee: number;
+  water_common_electricity_fee: number;
   misc_fee: number;
   total_amount: number;
   payment_method: PaymentMethod;
