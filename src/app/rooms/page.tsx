@@ -2,20 +2,27 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Eye, ListPlus, Pencil, Plus, PowerOff, RotateCcw } from "lucide-react";
+import { Eye, ListPlus, Pencil, Plus, PowerOff, RotateCcw, Wrench } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { Modal } from "@/components/Modal";
 import { RoomStatusBadge } from "@/components/StatusBadge";
 import { logAuditAction } from "@/lib/audit";
+import { todayString } from "@/lib/format";
 import { inferRoomMeta } from "@/lib/rooms";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import type { Room, RoomStatus } from "@/lib/types";
+import type { MaintenanceStatus, Room, RoomStatus } from "@/lib/types";
 
 const roomStatusOptions: { value: RoomStatus; label: string }[] = [
   { value: "vacant", label: "空房" },
   { value: "occupied", label: "租賃中" },
   { value: "moving_out", label: "退租中" },
   { value: "disabled", label: "已停用" }
+];
+
+const maintenanceStatusOptions: { value: MaintenanceStatus; label: string }[] = [
+  { value: "pending", label: "待處理" },
+  { value: "processing", label: "處理中" },
+  { value: "completed", label: "已完成" }
 ];
 
 export default function RoomsPage() {
@@ -30,10 +37,12 @@ function RoomsContent() {
   const supabase = getSupabaseBrowserClient();
   const [rooms, setRooms] = useState<Room[]>([]);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
+  const [addingMaintenanceRoom, setAddingMaintenanceRoom] = useState<Room | null>(null);
   const [creating, setCreating] = useState(false);
   const [bulkCreating, setBulkCreating] = useState(false);
   const [selectedBuilding, setSelectedBuilding] = useState("all");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const loadRooms = useCallback(async () => {
     if (!supabase) return;
@@ -88,6 +97,7 @@ function RoomsContent() {
     const confirmed = window.confirm(`確定將房號 ${room.room_number} ${actionText}？歷史租約、帳單與修繕記錄都會保留。`);
     if (!confirmed) return;
 
+    setNotice("");
     const { error: updateError } = await supabase
       .from("rooms")
       .update({ status: nextStatus })
@@ -131,6 +141,7 @@ function RoomsContent() {
       </div>
 
       {error ? <div className="error-box" style={{ marginBottom: 14 }}>{error}</div> : null}
+      {notice ? <div className="notice" style={{ marginBottom: 14 }}>{notice}</div> : null}
 
       <div className="rooms-layout">
         <aside className="building-nav" aria-label="棟別篩選">
@@ -193,6 +204,9 @@ function RoomsContent() {
                         <button className="icon-button" type="button" onClick={() => setEditingRoom(room)} title="編輯">
                           <Pencil size={17} />
                         </button>
+                        <button className="icon-button" type="button" onClick={() => setAddingMaintenanceRoom(room)} title="新增修繕記錄">
+                          <Wrench size={17} />
+                        </button>
                         <button
                           className="icon-button"
                           type="button"
@@ -234,6 +248,17 @@ function RoomsContent() {
         />
       ) : null}
 
+      {addingMaintenanceRoom ? (
+        <MaintenanceDialog
+          room={addingMaintenanceRoom}
+          onClose={() => setAddingMaintenanceRoom(null)}
+          onSaved={async () => {
+            setNotice(`已新增 ${addingMaintenanceRoom.room_number} 的修繕記錄。`);
+            setAddingMaintenanceRoom(null);
+          }}
+        />
+      ) : null}
+
       {bulkCreating ? (
         <BulkRoomDialog
           onClose={() => setBulkCreating(false)}
@@ -244,6 +269,129 @@ function RoomsContent() {
         />
       ) : null}
     </>
+  );
+}
+
+function MaintenanceDialog({
+  room,
+  onClose,
+  onSaved
+}: {
+  room: Room;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const supabase = getSupabaseBrowserClient();
+  const [repairDate, setRepairDate] = useState(todayString());
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [status, setStatus] = useState<MaintenanceStatus>("pending");
+  const [cost, setCost] = useState("");
+  const [worker, setWorker] = useState("");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase) return;
+    setError("");
+    setSaving(true);
+
+    const { data: activeContracts, error: contractError } = await supabase
+      .from("contracts")
+      .select("id")
+      .eq("room_id", room.id)
+      .eq("status", "active")
+      .order("start_date", { ascending: false })
+      .limit(1);
+
+    if (contractError) {
+      setError(contractError.message);
+      setSaving(false);
+      return;
+    }
+
+    const activeContractId = Array.isArray(activeContracts) && activeContracts.length > 0
+      ? String(activeContracts[0].id)
+      : null;
+
+    const { error: insertError } = await supabase.from("maintenance_records").insert({
+      room_id: room.id,
+      contract_id: activeContractId,
+      repair_date: repairDate,
+      title,
+      description: description || null,
+      status,
+      cost: Number(cost) || 0,
+      worker: worker || null,
+      note: note || null
+    });
+
+    if (insertError) {
+      setError(insertError.message);
+      setSaving(false);
+      return;
+    }
+
+    await onSaved();
+  }
+
+  return (
+    <Modal title="新增修繕記錄" onClose={onClose}>
+      <form onSubmit={save}>
+        <div className="modal-body">
+          <div className="form-grid">
+            <div className="form-field">
+              <label>房號</label>
+              <input className="input" value={room.room_number} disabled />
+            </div>
+            <div className="form-field">
+              <label htmlFor="room-repair-date">日期</label>
+              <input id="room-repair-date" className="input" type="date" value={repairDate} onChange={(event) => setRepairDate(event.target.value)} required />
+            </div>
+            <div className="form-field">
+              <label htmlFor="room-repair-title">修繕項目</label>
+              <input id="room-repair-title" className="input" value={title} onChange={(event) => setTitle(event.target.value)} required />
+            </div>
+            <div className="form-field">
+              <label htmlFor="room-repair-status">狀態</label>
+              <select id="room-repair-status" className="select" value={status} onChange={(event) => setStatus(event.target.value as MaintenanceStatus)}>
+                {maintenanceStatusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-field">
+              <label htmlFor="room-repair-cost">費用</label>
+              <input id="room-repair-cost" className="input" type="number" min="0" value={cost} onChange={(event) => setCost(event.target.value)} />
+            </div>
+            <div className="form-field">
+              <label htmlFor="room-repair-worker">負責人員</label>
+              <input id="room-repair-worker" className="input" value={worker} onChange={(event) => setWorker(event.target.value)} />
+            </div>
+            <div className="form-field full">
+              <label htmlFor="room-repair-description">說明</label>
+              <textarea id="room-repair-description" className="textarea" value={description} onChange={(event) => setDescription(event.target.value)} />
+            </div>
+            <div className="form-field full">
+              <label htmlFor="room-repair-note">備註</label>
+              <textarea id="room-repair-note" className="textarea" value={note} onChange={(event) => setNote(event.target.value)} />
+            </div>
+          </div>
+          {error ? <div className="error-box" style={{ marginTop: 14 }}>{error}</div> : null}
+        </div>
+        <div className="modal-footer">
+          <button className="secondary-button" type="button" onClick={onClose} disabled={saving}>取消</button>
+          <button className="button" type="submit" disabled={saving}>
+            <Wrench size={17} />
+            {saving ? "新增中..." : "新增"}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
