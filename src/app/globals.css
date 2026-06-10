@@ -233,8 +233,30 @@ a {
   margin-bottom: 14px;
 }
 
-.building-field {
-  min-width: 0;
+.dashboard-building-switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0 2px;
+  margin-bottom: 10px;
+}
+
+.building-switch-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.building-segments {
+  max-width: min(820px, 100%);
+  overflow-x: auto;
+}
+
+.compact-building-select {
+  min-width: 190px;
 }
 
 .segmented-control {

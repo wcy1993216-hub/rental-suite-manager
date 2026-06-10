@@ -519,7 +519,6 @@ function DashboardContent({ role }: { role: Role }) {
   }, [buildingCounts, buildings, totalBuildingCount]);
 
   const shouldUseBuildingSelect = buildingFilterOptions.length > 7;
-  const buildingFieldClassName = shouldUseBuildingSelect ? "field" : "field building-field";
 
   const filteredRows = useMemo(() => {
     const loweredKeyword = keyword.trim().toLowerCase();
@@ -1157,44 +1156,44 @@ function DashboardContent({ role }: { role: Role }) {
         </div>
       </div>
 
-      <div className="filter-bar">
+      <div className="dashboard-building-switch">
+        <span className="building-switch-label">棟別</span>
+        {shouldUseBuildingSelect ? (
+          <select
+            id="building"
+            className="select compact-building-select"
+            value={building}
+            onChange={(event) => setBuilding(event.target.value)}
+            aria-label="棟別"
+          >
+            {buildingFilterOptions.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label} ({item.count})
+              </option>
+            ))}
+          </select>
+        ) : (
+          <div className="segmented-control building-segments" role="group" aria-label="棟別">
+            {buildingFilterOptions.map((item) => (
+              <button
+                key={item.value}
+                className={`segmented-button${building === item.value ? " is-active" : ""}`}
+                type="button"
+                onClick={() => setBuilding(item.value)}
+                aria-pressed={building === item.value}
+              >
+                <span>{item.label}</span>
+                <span className="segment-count">{item.count}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="filter-bar dashboard-filter-bar">
         <div className="field">
           <label htmlFor="month">目前月份</label>
           <input id="month" className="input" type="month" value={month} onChange={(event) => setMonth(event.target.value)} />
-        </div>
-
-        <div className={buildingFieldClassName}>
-          <label htmlFor={shouldUseBuildingSelect ? "building" : undefined}>棟別</label>
-          {shouldUseBuildingSelect ? (
-            <select
-              id="building"
-              className="select"
-              value={building}
-              onChange={(event) => setBuilding(event.target.value)}
-              aria-label="棟別"
-            >
-              {buildingFilterOptions.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label} ({item.count})
-                </option>
-              ))}
-            </select>
-          ) : (
-            <div className="segmented-control" role="group" aria-label="棟別">
-              {buildingFilterOptions.map((item) => (
-                <button
-                  key={item.value}
-                  className={`segmented-button${building === item.value ? " is-active" : ""}`}
-                  type="button"
-                  onClick={() => setBuilding(item.value)}
-                  aria-pressed={building === item.value}
-                >
-                  <span>{item.label}</span>
-                  <span className="segment-count">{item.count}</span>
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         <div className="field">
