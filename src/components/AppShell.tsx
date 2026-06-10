@@ -9,6 +9,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { ROLE_LABELS } from "@/lib/permissions";
 import type { Profile, Role } from "@/lib/types";
 import { Modal } from "@/components/Modal";
+import { readCachedProfile, writeCachedProfile } from "@/lib/profileCache";
 
 interface NavItem {
   href: string;
@@ -43,12 +44,20 @@ export function AppShell({ children }: { children: ReactNode }) {
         setProfile(null);
         return;
       }
+      const cachedProfile = readCachedProfile(user.id);
+      if (cachedProfile) {
+        setProfile(cachedProfile);
+      }
       const { data } = await client
         .from("profiles")
         .select("*")
         .eq("user_id", user.id)
         .maybeSingle();
-      setProfile((data as Profile | null) ?? null);
+      const loadedProfile = (data as Profile | null) ?? null;
+      if (loadedProfile) {
+        writeCachedProfile(loadedProfile);
+      }
+      setProfile(loadedProfile);
     }
 
     void loadProfile();

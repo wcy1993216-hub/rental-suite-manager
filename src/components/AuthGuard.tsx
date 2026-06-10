@@ -8,6 +8,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { canViewRoute } from "@/lib/permissions";
 import type { Profile, Role } from "@/lib/types";
 import { SetupNotice } from "@/components/SetupNotice";
+import { readCachedProfile, writeCachedProfile } from "@/lib/profileCache";
 
 interface AuthGuardProps {
   allowedRoles?: Role[];
@@ -20,23 +21,33 @@ export function AuthGuard({ allowedRoles, children }: AuthGuardProps) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState("");
+  const [slowLoading, setSlowLoading] = useState(false);
   const supabase = getSupabaseBrowserClient();
 
   useEffect(() => {
     if (!supabase) return;
     const client = supabase;
+    const slowTimer = window.setTimeout(() => setSlowLoading(true), 2500);
 
     async function loadSession() {
       setLoading(true);
+      setSlowLoading(false);
       const { data: sessionData } = await client.auth.getSession();
       const sessionUser = sessionData.session?.user ?? null;
 
       if (!sessionUser) {
+        window.clearTimeout(slowTimer);
         router.replace("/login");
         return;
       }
 
       setUser(sessionUser);
+      const cachedProfile = readCachedProfile(sessionUser.id);
+      if (cachedProfile) {
+        setProfile(cachedProfile);
+        setLoading(false);
+        window.clearTimeout(slowTimer);
+      }
 
       const { data: existingProfile, error: profileError } = await client
         .from("profiles")
@@ -45,14 +56,19 @@ export function AuthGuard({ allowedRoles, children }: AuthGuardProps) {
         .maybeSingle();
 
       if (profileError) {
+        if (cachedProfile) return;
         setError(profileError.message);
         setLoading(false);
+        window.clearTimeout(slowTimer);
         return;
       }
 
       if (existingProfile) {
-        setProfile(existingProfile as Profile);
+        const loadedProfile = existingProfile as Profile;
+        writeCachedProfile(loadedProfile);
+        setProfile(loadedProfile);
         setLoading(false);
+        window.clearTimeout(slowTimer);
         return;
       }
 
@@ -69,16 +85,28 @@ export function AuthGuard({ allowedRoles, children }: AuthGuardProps) {
       if (insertError) {
         setError(insertError.message);
       } else {
-        setProfile(insertedProfile as Profile);
+        const loadedProfile = insertedProfile as Profile;
+        writeCachedProfile(loadedProfile);
+        setProfile(loadedProfile);
       }
       setLoading(false);
+      window.clearTimeout(slowTimer);
     }
 
     void loadSession();
+
+    return () => window.clearTimeout(slowTimer);
   }, [router, supabase]);
 
   if (!supabase) return <SetupNotice />;
-  if (loading) return <div className="loading">載入中...</div>;
+  if (loading) {
+    return (
+      <div className="loading">
+        <strong>載入中...</strong>
+        {slowLoading ? <span>Supabase 連線較慢，正在重新確認登入狀態。</span> : null}
+      </div>
+    );
+  }
   if (error) return <div className="error-box">{error}</div>;
   if (!user || !profile) return null;
 

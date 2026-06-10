@@ -24,6 +24,7 @@ type SyncStatus = "idle" | "syncing" | "synced";
 const DASHBOARD_CACHE_PREFIX = "rental-dashboard-rows";
 const DASHBOARD_SYNC_REASON_KEY = "rental-dashboard-needs-sync";
 const DASHBOARD_FOCUS_ROOM_KEY = "rental-dashboard-focus-room-id";
+const DASHBOARD_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
 interface MonthlyBillInsertPayload {
   room_id: string;
@@ -38,6 +39,11 @@ interface MonthlyBillInsertPayload {
   payment_status: PaymentStatus;
   paid_date: string | null;
   note: string | null;
+}
+
+interface DashboardRowsCachePayload {
+  savedAt: number;
+  rows: DashboardBill[];
 }
 
 function normalizeBillRows(data: unknown[] | null): DashboardBill[] {
@@ -163,6 +169,43 @@ function sortDashboardRows(rows: DashboardBill[]) {
 
 function dashboardCacheKey(month: string) {
   return `${DASHBOARD_CACHE_PREFIX}:${month}`;
+}
+
+function readDashboardRowsCache(month: string) {
+  if (typeof window === "undefined") return null;
+  const key = dashboardCacheKey(month);
+
+  try {
+    const raw = localStorage.getItem(key) || sessionStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as DashboardBill[] | DashboardRowsCachePayload;
+    const rows = Array.isArray(parsed) ? parsed : parsed.rows;
+    const savedAt = Array.isArray(parsed) ? Date.now() : parsed.savedAt;
+    if (!Array.isArray(rows)) return null;
+    if (Date.now() - savedAt > DASHBOARD_CACHE_TTL_MS) return null;
+    return rows;
+  } catch {
+    localStorage.removeItem(key);
+    sessionStorage.removeItem(key);
+    return null;
+  }
+}
+
+function writeDashboardRowsCache(month: string, rows: DashboardBill[]) {
+  if (typeof window === "undefined") return;
+  const key = dashboardCacheKey(month);
+  const payload: DashboardRowsCachePayload = {
+    savedAt: Date.now(),
+    rows
+  };
+
+  try {
+    const serialized = JSON.stringify(payload);
+    sessionStorage.setItem(key, serialized);
+    localStorage.setItem(key, serialized);
+  } catch {
+    // Cache failure should never block the dashboard.
+  }
 }
 
 export default function DashboardPage() {
@@ -336,24 +379,19 @@ function DashboardContent({ role }: { role: Role }) {
   useEffect(() => {
     rowsRef.current = rows;
     if (typeof window !== "undefined" && rows.length > 0) {
-      sessionStorage.setItem(dashboardCacheKey(month), JSON.stringify(rows));
+      writeDashboardRowsCache(month, rows);
     }
   }, [month, rows]);
 
   useEffect(() => {
     let hasCachedRows = false;
     if (typeof window !== "undefined") {
-      const cachedRows = sessionStorage.getItem(dashboardCacheKey(month));
+      const cachedRows = readDashboardRowsCache(month);
       if (cachedRows) {
-        try {
-          const parsedRows = JSON.parse(cachedRows) as DashboardBill[];
-          setRows(sortDashboardRows(parsedRows));
-          rowsRef.current = parsedRows;
-          setInitialLoading(false);
-          hasCachedRows = parsedRows.length > 0;
-        } catch {
-          sessionStorage.removeItem(dashboardCacheKey(month));
-        }
+        setRows(sortDashboardRows(cachedRows));
+        rowsRef.current = cachedRows;
+        setInitialLoading(false);
+        hasCachedRows = cachedRows.length > 0;
       } else {
         setRows([]);
         rowsRef.current = [];
