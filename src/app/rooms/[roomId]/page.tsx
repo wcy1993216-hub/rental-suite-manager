@@ -169,6 +169,7 @@ function RoomDetailContent({ role }: { role: Role }) {
   function returnToDashboardWithSync() {
     if (typeof window !== "undefined") {
       sessionStorage.setItem("rental-dashboard-needs-sync", "room-detail-saved");
+      sessionStorage.setItem("rental-dashboard-focus-room-id", roomId);
     }
     router.push(returnHref);
   }

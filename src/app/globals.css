@@ -449,6 +449,21 @@ a {
   background: #d8ebff;
 }
 
+.data-table tbody tr.row-focus-highlight,
+.data-table tbody tr.row-focus-highlight td {
+  animation: row-focus-pulse 3.2s ease-out;
+}
+
+@keyframes row-focus-pulse {
+  0%,
+  70% {
+    background: #fff3bd;
+  }
+  100% {
+    background: inherit;
+  }
+}
+
 .number-cell {
   text-align: right !important;
   font-variant-numeric: tabular-nums;

@@ -21,6 +21,7 @@ type SyncStatus = "idle" | "syncing" | "synced";
 
 const DASHBOARD_CACHE_PREFIX = "rental-dashboard-rows";
 const DASHBOARD_SYNC_REASON_KEY = "rental-dashboard-needs-sync";
+const DASHBOARD_FOCUS_ROOM_KEY = "rental-dashboard-focus-room-id";
 
 interface MonthlyBillInsertPayload {
   room_id: string;
@@ -192,6 +193,7 @@ function DashboardContent({ role }: { role: Role }) {
   const [savingBillId, setSavingBillId] = useState<string | null>(null);
   const [rowSyncingIds, setRowSyncingIds] = useState<Set<string>>(() => new Set());
   const [rowSyncedIds, setRowSyncedIds] = useState<Set<string>>(() => new Set());
+  const [focusedRoomId, setFocusedRoomId] = useState<string | null>(null);
   const [monthLock, setMonthLock] = useState<MonthlyLock | null>(null);
   const rowsRef = useRef<DashboardBill[]>([]);
   const loadRequestIdRef = useRef(0);
@@ -357,8 +359,13 @@ function DashboardContent({ role }: { role: Role }) {
     }
 
     const syncReason = typeof window !== "undefined" ? sessionStorage.getItem(DASHBOARD_SYNC_REASON_KEY) : null;
+    const focusRoomId = typeof window !== "undefined" ? sessionStorage.getItem(DASHBOARD_FOCUS_ROOM_KEY) : null;
     if (syncReason) {
       sessionStorage.removeItem(DASHBOARD_SYNC_REASON_KEY);
+    }
+    if (focusRoomId) {
+      sessionStorage.removeItem(DASHBOARD_FOCUS_ROOM_KEY);
+      setFocusedRoomId(focusRoomId);
     }
     void loadBills({
       background: hasCachedRows,
@@ -455,6 +462,21 @@ function DashboardContent({ role }: { role: Role }) {
       return matchBuilding && matchStatus && matchMethod && matchKeyword;
     });
   }, [building, keyword, method, rows, status]);
+
+  useEffect(() => {
+    if (!focusedRoomId || filteredRows.length === 0) return;
+
+    const hasFocusedRow = filteredRows.some((row) => row.room_id === focusedRoomId);
+    if (!hasFocusedRow) return;
+
+    const timer = setTimeout(() => {
+      const targetRow = document.querySelector<HTMLTableRowElement>(`[data-room-row-id="${focusedRoomId}"]`);
+      targetRow?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setTimeout(() => setFocusedRoomId(null), 3600);
+    }, 180);
+
+    return () => clearTimeout(timer);
+  }, [filteredRows, focusedRoomId]);
 
   const summary = useMemo(() => {
     const total = filteredRows.reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0);
@@ -1143,12 +1165,13 @@ function DashboardContent({ role }: { role: Role }) {
               filteredRows.map((row) => (
                 <tr
                   key={row.id}
+                  data-room-row-id={row.room_id}
                   className={
-                    row.payment_status === "cash_paid"
-                      ? "row-cash-paid"
-                      : row.payment_status === "bank_paid"
-                        ? "row-bank-paid"
-                        : undefined
+                    [
+                      row.payment_status === "cash_paid" ? "row-cash-paid" : "",
+                      row.payment_status === "bank_paid" ? "row-bank-paid" : "",
+                      focusedRoomId === row.room_id ? "row-focus-highlight" : ""
+                    ].filter(Boolean).join(" ") || undefined
                   }
                 >
                   <td>
