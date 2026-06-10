@@ -1152,9 +1152,9 @@ function DashboardContent({ role }: { role: Role }) {
       房號: row.rooms?.room_number ?? "",
       租客: row.contracts?.tenants?.name ?? (row.payment_status === "vacant" || row.note === "空房" ? "未出租" : ""),
       房租: Number(row.rent_amount ?? 0),
+      "清潔/車位": Number(row.recurring_fee ?? 0),
       電費: Number(row.electricity_fee ?? 0),
       "水費/公電": Number(row.water_common_electricity_fee ?? 0),
-      "清潔/車位": Number(row.recurring_fee ?? 0),
       其他: Number(row.misc_fee ?? 0),
       當月應繳總額: Number(row.total_amount ?? 0),
       付款方式: PAYMENT_METHOD_LABELS[row.payment_method],
@@ -1316,9 +1316,9 @@ function DashboardContent({ role }: { role: Role }) {
               <th>房號</th>
               <th>租客</th>
               <th className="number-cell">房租</th>
+              <th className="number-cell">清潔/車位</th>
               <th className="number-cell">電費</th>
               <th className="number-cell">水費/公電</th>
-              <th className="number-cell">清潔/車位</th>
               <th className="number-cell">其他</th>
               <th className="number-cell">當月應繳總額</th>
               <th>付款方式</th>
@@ -1357,6 +1357,7 @@ function DashboardContent({ role }: { role: Role }) {
                   </td>
                   <td>{row.contracts?.tenants?.name ?? (row.payment_status === "vacant" || row.note === "空房" ? "未出租" : "-")}</td>
                   <td className="number-cell">{formatCurrency(row.rent_amount)}</td>
+                  <td className="number-cell">{formatCurrency(row.recurring_fee ?? 0)}</td>
                   <td className="number-cell">
                     {canManageEverything(role) ? (
                       <input
@@ -1393,7 +1394,6 @@ function DashboardContent({ role }: { role: Role }) {
                       formatCurrency(row.water_common_electricity_fee ?? 0)
                     )}
                   </td>
-                  <td className="number-cell">{formatCurrency(row.recurring_fee ?? 0)}</td>
                   <td className="number-cell">
                     {canManageEverything(role) ? (
                       <input
