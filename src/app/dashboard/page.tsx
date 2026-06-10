@@ -7,7 +7,7 @@ import * as XLSX from "xlsx";
 import { Banknote, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, Eye, Landmark, Lock, RefreshCw, RotateCcw, Search, Undo2, Unlock } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { Modal } from "@/components/Modal";
-import { PaymentMethodBadge, PaymentStatusBadge } from "@/components/StatusBadge";
+import { PaymentStatusBadge } from "@/components/StatusBadge";
 import { useDashboardPagination } from "@/hooks/useDashboardPagination";
 import { logAuditAction } from "@/lib/audit";
 import { getActiveContractBillNote } from "@/lib/billNotes";
@@ -1321,7 +1321,6 @@ function DashboardContent({ role }: { role: Role }) {
               <th className="number-cell">水費/公電</th>
               <th className="number-cell">其他</th>
               <th className="number-cell">當月應繳總額</th>
-              <th>付款方式</th>
               <th>狀態</th>
               <th>繳款日</th>
               <th>匯款後五碼</th>
@@ -1332,11 +1331,11 @@ function DashboardContent({ role }: { role: Role }) {
           <tbody>
             {initialLoading && rows.length === 0 ? (
               <tr>
-                <td colSpan={14}>載入中...</td>
+                <td colSpan={13}>載入中...</td>
               </tr>
             ) : filteredRows.length === 0 ? (
               <tr>
-                <td colSpan={14}>本月尚未建立帳單，請按「產生本月帳單」。</td>
+                <td colSpan={13}>本月尚未建立帳單，請按「產生本月帳單」。</td>
               </tr>
             ) : (
               paginatedRows.map((row) => (
@@ -1413,7 +1412,6 @@ function DashboardContent({ role }: { role: Role }) {
                     )}
                   </td>
                   <td className="number-cell">{formatCurrency(row.total_amount)}</td>
-                  <td><PaymentMethodBadge method={row.payment_method} /></td>
                   <td><PaymentStatusBadge status={row.payment_status} /></td>
                   <td>{formatDate(row.paid_date)}</td>
                   <td>{row.transfer_last5 || "-"}</td>
