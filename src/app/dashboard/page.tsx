@@ -111,6 +111,19 @@ function calculateBillTotal(bill: {
   );
 }
 
+function getReceivedAmount(row: Pick<DashboardBill, "payment_status" | "payment_method" | "total_amount" | "transfer_amount">) {
+  const totalAmount = Number(row.total_amount ?? 0);
+  if (row.payment_status === "cash_paid") return totalAmount;
+  if (row.payment_status === "bank_paid") return Number(row.transfer_amount ?? totalAmount);
+  if (row.payment_status === "partial_paid") return Math.min(Number(row.transfer_amount ?? 0), totalAmount);
+  return 0;
+}
+
+function getUnpaidBalance(row: Pick<DashboardBill, "payment_status" | "payment_method" | "total_amount" | "transfer_amount">) {
+  if (row.payment_status === "vacant") return 0;
+  return Math.max(Number(row.total_amount ?? 0) - getReceivedAmount(row), 0);
+}
+
 function createVacantBillPayload(roomId: string, billMonth: string): MonthlyBillInsertPayload {
   return {
     room_id: roomId,
@@ -585,17 +598,17 @@ function DashboardContent({ role }: { role: Role }) {
   const summary = useMemo(() => {
     const total = filteredRows.reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0);
     const bankReceived = filteredRows
-      .filter((row) => row.payment_status === "bank_paid")
-      .reduce((sum, row) => sum + Number(row.transfer_amount ?? row.total_amount ?? 0), 0);
+      .filter((row) => row.payment_method === "bank_transfer" && ["bank_paid", "partial_paid"].includes(row.payment_status))
+      .reduce((sum, row) => sum + getReceivedAmount(row), 0);
     const cashReceived = filteredRows
       .filter((row) => row.payment_status === "cash_paid")
       .reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0);
     const received = bankReceived + cashReceived;
-    const unpaidRows = filteredRows.filter((row) => row.payment_status !== "vacant" && Number(row.total_amount ?? 0) > 0 && !["bank_paid", "cash_paid"].includes(row.payment_status));
+    const unpaidRows = filteredRows.filter((row) => getUnpaidBalance(row) > 0);
     return {
       total,
       received,
-      unpaid: total - received,
+      unpaid: filteredRows.reduce((sum, row) => sum + getUnpaidBalance(row), 0),
       bankReceived,
       cashReceived,
       unpaidCount: unpaidRows.length
@@ -1102,20 +1115,17 @@ function DashboardContent({ role }: { role: Role }) {
     const totals = sortedRows.reduce(
       (sum, row) => {
         const totalAmount = Number(row.total_amount ?? 0);
-        const bankAmount = row.payment_status === "bank_paid" ? Number(row.transfer_amount ?? totalAmount) : 0;
+        const bankAmount = row.payment_method === "bank_transfer" && ["bank_paid", "partial_paid"].includes(row.payment_status)
+          ? getReceivedAmount(row)
+          : 0;
         const cashAmount = row.payment_status === "cash_paid" ? totalAmount : 0;
+        const unpaidBalance = getUnpaidBalance(row);
         return {
           total: sum.total + totalAmount,
           bank: sum.bank + bankAmount,
           cash: sum.cash + cashAmount,
-          unpaid:
-            row.payment_status !== "vacant" && totalAmount > 0 && !["bank_paid", "cash_paid"].includes(row.payment_status)
-              ? sum.unpaid + totalAmount
-              : sum.unpaid,
-          unpaidCount:
-            row.payment_status !== "vacant" && totalAmount > 0 && !["bank_paid", "cash_paid"].includes(row.payment_status)
-              ? sum.unpaidCount + 1
-              : sum.unpaidCount
+          unpaid: sum.unpaid + unpaidBalance,
+          unpaidCount: unpaidBalance > 0 ? sum.unpaidCount + 1 : sum.unpaidCount
         };
       },
       { total: 0, bank: 0, cash: 0, unpaid: 0, unpaidCount: 0 }
@@ -1570,6 +1580,14 @@ function BankTransferDialog({
 
     setSaving(true);
     setError("");
+    const numericAmount = Number(amount) || 0;
+    const totalAmount = Number(bill.total_amount ?? 0);
+    if (finalStatus === "partial_paid" && (numericAmount <= 0 || numericAmount >= totalAmount)) {
+      setError("部分收款金額需大於 0 且小於當月應繳總額。");
+      setSaving(false);
+      return;
+    }
+
     const { error: updateError } = await supabase
       .from("monthly_bills")
       .update({
@@ -1577,7 +1595,7 @@ function BankTransferDialog({
         payment_status: finalStatus,
         paid_date: paidDate || null,
         transfer_last5: last5 || null,
-        transfer_amount: Number(amount) || null,
+        transfer_amount: numericAmount || null,
         note: note || null
       })
       .eq("id", bill.id);
@@ -1599,7 +1617,7 @@ function BankTransferDialog({
         payment_status: finalStatus,
         paid_date: paidDate || null,
         transfer_last5: last5 || null,
-        transfer_amount: Number(amount) || null
+        transfer_amount: numericAmount || null
       }
     });
     await onSaved();
@@ -1643,6 +1661,9 @@ function BankTransferDialog({
           </button>
           <button className="secondary-button" type="submit" disabled={saving}>
             存為待確認
+          </button>
+          <button className="secondary-button" type="button" disabled={saving} onClick={(event) => saveTransfer(event as unknown as FormEvent<HTMLFormElement>, "partial_paid")}>
+            部分收款
           </button>
           <button className="button" type="button" disabled={saving} onClick={(event) => saveTransfer(event as unknown as FormEvent<HTMLFormElement>, "bank_paid")}>
             確認到帳

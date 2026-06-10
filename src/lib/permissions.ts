@@ -17,6 +17,7 @@ export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
   unpaid: "未收",
   bank_paid: "已匯款",
   cash_paid: "已收現金",
+  partial_paid: "部分收款",
   pending: "待確認",
   abnormal: "異常",
   vacant: "空房",

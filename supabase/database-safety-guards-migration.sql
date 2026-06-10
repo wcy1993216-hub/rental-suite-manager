@@ -93,7 +93,7 @@ alter table public.monthly_bills
     (payment_status = 'cash_paid' and payment_method = 'cash')
     or (payment_status in ('bank_paid', 'pending') and payment_method = 'bank_transfer')
     or (payment_status in ('vacant', 'rent_prepaid') and payment_method = 'none')
-    or payment_status in ('unpaid', 'abnormal')
+    or payment_status in ('unpaid', 'abnormal', 'partial_paid')
   )
   not valid;
 

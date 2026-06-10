@@ -4,7 +4,7 @@ export type RoomStatus = "vacant" | "occupied" | "moving_out" | "disabled";
 export type ContractStatus = "active" | "ended";
 export type RentPaymentCycle = "monthly" | "semiannual" | "annual";
 export type PaymentMethod = "bank_transfer" | "cash" | "none";
-export type PaymentStatus = "unpaid" | "bank_paid" | "cash_paid" | "pending" | "abnormal" | "vacant" | "rent_prepaid";
+export type PaymentStatus = "unpaid" | "bank_paid" | "cash_paid" | "partial_paid" | "pending" | "abnormal" | "vacant" | "rent_prepaid";
 export type MaintenanceStatus = "pending" | "processing" | "completed";
 
 export interface Profile {

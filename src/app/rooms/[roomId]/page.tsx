@@ -97,7 +97,7 @@ async function syncRoomBillForMonth(
   const electricityFee = Number(existing?.electricity_fee ?? 0);
   const waterCommonElectricityFee = Number(existing?.water_common_electricity_fee ?? 0);
   const miscFee = Number(existing?.misc_fee ?? 0);
-  const paidStatuses = ["bank_paid", "cash_paid", "pending", "abnormal"];
+  const paidStatuses = ["bank_paid", "cash_paid", "partial_paid", "pending", "abnormal"];
 
   if (!activeContract || !isMonthWithinContract(billMonth, activeContract)) {
     const vacantPayload = {

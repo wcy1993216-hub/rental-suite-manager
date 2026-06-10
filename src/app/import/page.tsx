@@ -116,6 +116,9 @@ function normalizeDate(value: unknown, selectedMonth?: string) {
 
 function derivePayment(statusText: string, transferLast5: string): { paymentMethod: PaymentMethod; paymentStatus: PaymentStatus } {
   const text = statusText.toLowerCase();
+  if (text.includes("部分") || text.includes("partial")) {
+    return { paymentMethod: transferLast5 ? "bank_transfer" : "none", paymentStatus: "partial_paid" };
+  }
   if (text.includes("異常") || text.includes("異常") || text.includes("abnormal")) {
     return { paymentMethod: transferLast5 ? "bank_transfer" : "none", paymentStatus: "abnormal" };
   }

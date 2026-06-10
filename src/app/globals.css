@@ -852,6 +852,11 @@ a {
   background: var(--warning-weak);
 }
 
+.status-partial_paid {
+  color: #92400e;
+  background: #fef3c7;
+}
+
 .status-abnormal {
   color: var(--orange);
   background: var(--orange-weak);

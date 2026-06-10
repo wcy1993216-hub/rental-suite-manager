@@ -26,10 +26,11 @@ exception when duplicate_object then null;
 end $$;
 
 do $$ begin
-  create type public.payment_status as enum ('unpaid', 'bank_paid', 'cash_paid', 'pending', 'abnormal', 'vacant', 'rent_prepaid');
+  create type public.payment_status as enum ('unpaid', 'bank_paid', 'cash_paid', 'partial_paid', 'pending', 'abnormal', 'vacant', 'rent_prepaid');
 exception when duplicate_object then null;
 end $$;
 
+alter type public.payment_status add value if not exists 'partial_paid';
 alter type public.payment_status add value if not exists 'vacant';
 alter type public.payment_status add value if not exists 'rent_prepaid';
 
@@ -307,7 +308,7 @@ alter table public.monthly_bills
     (payment_status = 'cash_paid' and payment_method = 'cash')
     or (payment_status in ('bank_paid', 'pending') and payment_method = 'bank_transfer')
     or (payment_status in ('vacant', 'rent_prepaid') and payment_method = 'none')
-    or payment_status in ('unpaid', 'abnormal')
+    or payment_status in ('unpaid', 'abnormal', 'partial_paid')
   )
   not valid;
 
