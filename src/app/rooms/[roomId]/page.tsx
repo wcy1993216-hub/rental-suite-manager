@@ -27,6 +27,118 @@ function normalizeContract(item: unknown): ContractWithTenant | null {
   };
 }
 
+function isMonthWithinContract(monthDate: string, contract: ContractWithTenant) {
+  if (contract.start_date && monthDate < contract.start_date.slice(0, 7) + "-01") return false;
+  if (contract.end_date && monthDate > contract.end_date.slice(0, 7) + "-01") return false;
+  return true;
+}
+
+function isRentPrepaidForMonth(monthDate: string, contract: ContractWithTenant) {
+  return contract.rent_payment_cycle !== "monthly" && Boolean(contract.rent_paid_until && contract.rent_paid_until >= monthDate);
+}
+
+function buildPaymentDueDate(billMonth: string, dueDay: number | null | undefined) {
+  if (!dueDay) return null;
+  const [yearText, monthText] = billMonth.slice(0, 7).split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const lastDay = new Date(year, month, 0).getDate();
+  const day = Math.min(Math.max(Number(dueDay), 1), lastDay);
+  return `${yearText}-${monthText}-${String(day).padStart(2, "0")}`;
+}
+
+function getReturnBillMonth(returnHref: string) {
+  const fallbackMonth = `${todayString().slice(0, 7)}-01`;
+  if (typeof window === "undefined") return fallbackMonth;
+
+  try {
+    const url = new URL(returnHref, window.location.origin);
+    const month = url.searchParams.get("month");
+    return month ? `${month}-01` : fallbackMonth;
+  } catch {
+    return fallbackMonth;
+  }
+}
+
+async function syncRoomBillForMonth(
+  supabase: NonNullable<ReturnType<typeof getSupabaseBrowserClient>>,
+  roomId: string,
+  billMonth: string
+) {
+  const [{ data: contractData, error: contractError }, { data: existingBill, error: billError }] = await Promise.all([
+    supabase
+      .from("contracts")
+      .select("*, tenants(*)")
+      .eq("room_id", roomId)
+      .eq("status", "active")
+      .order("start_date", { ascending: false })
+      .limit(1),
+    supabase
+      .from("monthly_bills")
+      .select("*")
+      .eq("room_id", roomId)
+      .eq("bill_month", billMonth)
+      .maybeSingle()
+  ]);
+
+  if (contractError) throw contractError;
+  if (billError) throw billError;
+
+  const activeContract = normalizeContract((contractData ?? [])[0]);
+  const existing = existingBill as MonthlyBill | null;
+  const electricityFee = Number(existing?.electricity_fee ?? 0);
+  const miscFee = Number(existing?.misc_fee ?? 0);
+  const paidStatuses = ["bank_paid", "cash_paid", "pending", "abnormal"];
+
+  if (!activeContract || !isMonthWithinContract(billMonth, activeContract)) {
+    const vacantPayload = {
+      room_id: roomId,
+      contract_id: null,
+      bill_month: billMonth,
+      rent_amount: 0,
+      recurring_fee: 0,
+      electricity_fee: 0,
+      misc_fee: 0,
+      total_amount: 0,
+      payment_method: "none",
+      payment_status: "vacant",
+      paid_date: null,
+      transfer_last5: null,
+      transfer_amount: null,
+      note: "空房"
+    };
+    const { error } = await supabase.from("monthly_bills").upsert(vacantPayload, { onConflict: "room_id,bill_month" });
+    if (error) throw error;
+    return;
+  }
+
+  const rentPrepaid = isRentPrepaidForMonth(billMonth, activeContract);
+  const rentAmount = rentPrepaid ? 0 : Number(activeContract.monthly_rent ?? 0);
+  const recurringFee = Number(activeContract.cleaning_fee ?? 0) + Number(activeContract.parking_fee ?? 0);
+  const totalAmount = rentAmount + recurringFee + electricityFee + miscFee;
+  const keepPaymentState = existing ? paidStatuses.includes(existing.payment_status) : false;
+  const preservedBill = keepPaymentState ? existing : null;
+  const payload = {
+    room_id: roomId,
+    contract_id: activeContract.id,
+    bill_month: billMonth,
+    rent_amount: rentAmount,
+    recurring_fee: recurringFee,
+    electricity_fee: electricityFee,
+    misc_fee: miscFee,
+    total_amount: totalAmount,
+    payment_method: preservedBill ? preservedBill.payment_method : "none",
+    payment_status: preservedBill ? preservedBill.payment_status : rentPrepaid && totalAmount === 0 ? "rent_prepaid" : "unpaid",
+    paid_date: preservedBill ? preservedBill.paid_date : buildPaymentDueDate(billMonth, activeContract.payment_due_day),
+    transfer_last5: preservedBill ? preservedBill.transfer_last5 : null,
+    transfer_amount: preservedBill ? preservedBill.transfer_amount : null,
+    note: rentPrepaid ? `房租已${RENT_PAYMENT_CYCLE_LABELS[activeContract.rent_payment_cycle ?? "monthly"]}至 ${formatDate(activeContract.rent_paid_until)}` : existing?.note ?? null
+  };
+
+  const { error } = await supabase.from("monthly_bills").upsert(payload, { onConflict: "room_id,bill_month" });
+  if (error) throw error;
+}
+
 export default function RoomDetailPage() {
   return (
     <AuthGuard>
@@ -41,6 +153,7 @@ function RoomDetailContent({ role }: { role: Role }) {
   const searchParams = useSearchParams();
   const roomId = params.roomId;
   const returnHref = searchParams.get("return") || "/dashboard";
+  const returnBillMonth = getReturnBillMonth(returnHref);
   const supabase = getSupabaseBrowserClient();
   const [room, setRoom] = useState<Room | null>(null);
   const [activeContract, setActiveContract] = useState<ContractWithTenant | null>(null);
@@ -302,6 +415,7 @@ function RoomDetailContent({ role }: { role: Role }) {
       {editingTenant && activeContract ? (
         <TenantEditDialog
           contract={activeContract}
+          billMonth={returnBillMonth}
           onClose={() => setEditingTenant(false)}
           onSaved={async () => {
             setEditingTenant(false);
@@ -314,6 +428,7 @@ function RoomDetailContent({ role }: { role: Role }) {
         <ChangeTenantDialog
           room={room}
           activeContract={activeContract}
+          billMonth={returnBillMonth}
           onClose={() => setChangingTenant(false)}
           onSaved={async () => {
             setChangingTenant(false);
@@ -338,6 +453,7 @@ function RoomDetailContent({ role }: { role: Role }) {
         <MoveOutDialog
           room={room}
           contract={activeContract}
+          billMonth={returnBillMonth}
           onClose={() => setMovingOut(false)}
           onSaved={async () => {
             setMovingOut(false);
@@ -351,10 +467,12 @@ function RoomDetailContent({ role }: { role: Role }) {
 
 function TenantEditDialog({
   contract,
+  billMonth,
   onClose,
   onSaved
 }: {
   contract: ContractWithTenant;
+  billMonth: string;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
@@ -420,6 +538,13 @@ function TenantEditDialog({
       return;
     }
 
+    try {
+      await syncRoomBillForMonth(supabase, contract.room_id, billMonth);
+    } catch (syncError) {
+      setError(syncError instanceof Error ? `租客已儲存，但收租表同步失敗：${syncError.message}` : "租客已儲存，但收租表同步失敗。");
+      return;
+    }
+
     await onSaved();
   }
 
@@ -475,11 +600,13 @@ function TenantEditDialog({
 function ChangeTenantDialog({
   room,
   activeContract,
+  billMonth,
   onClose,
   onSaved
 }: {
   room: Room;
   activeContract: ContractWithTenant | null;
+  billMonth: string;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
@@ -551,6 +678,7 @@ function ChangeTenantDialog({
       const roomResult = await supabase.from("rooms").update({ status: "occupied" }).eq("id", room.id);
       if (roomResult.error) throw roomResult.error;
 
+      await syncRoomBillForMonth(supabase, room.id, billMonth);
       await onSaved();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "更換租客失敗，請稍後再試。");
@@ -859,11 +987,13 @@ function MaintenanceDialog({
 function MoveOutDialog({
   room,
   contract,
+  billMonth,
   onClose,
   onSaved
 }: {
   room: Room;
   contract: ContractWithTenant;
+  billMonth: string;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
@@ -910,12 +1040,11 @@ function MoveOutDialog({
       return;
     }
 
-    const currentBillMonth = `${today.slice(0, 7)}-01`;
     const billResult = await supabase.from("monthly_bills").upsert(
       {
         room_id: room.id,
         contract_id: null,
-        bill_month: currentBillMonth,
+        bill_month: billMonth,
         rent_amount: 0,
         recurring_fee: 0,
         electricity_fee: 0,
