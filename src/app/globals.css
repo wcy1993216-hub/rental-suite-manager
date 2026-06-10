@@ -675,70 +675,119 @@ a {
 }
 
 .dashboard-table {
-  min-width: 1180px;
+  min-width: 1424px;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
-.dashboard-table th:nth-child(1),
-.dashboard-table td:not([colspan]):nth-child(1) {
-  position: sticky;
-  left: 0;
-  width: 108px;
-  min-width: 108px;
-  max-width: 108px;
-  z-index: 2;
-  background: var(--surface);
-}
-
-.dashboard-table th:nth-child(2),
-.dashboard-table td:not([colspan]):nth-child(2) {
-  position: sticky;
-  left: 108px;
+.dashboard-col-room {
   width: 116px;
-  min-width: 116px;
-  max-width: 116px;
+}
+
+.dashboard-col-tenant {
+  width: 132px;
+}
+
+.dashboard-col-money {
+  width: 96px;
+}
+
+.dashboard-col-fixed-fee {
+  width: 104px;
+}
+
+.dashboard-col-input-fee {
+  width: 86px;
+}
+
+.dashboard-col-water {
+  width: 96px;
+}
+
+.dashboard-col-total {
+  width: 116px;
+}
+
+.dashboard-col-status {
+  width: 94px;
+}
+
+.dashboard-col-date {
+  width: 96px;
+}
+
+.dashboard-col-transfer {
+  width: 92px;
+}
+
+.dashboard-col-note {
+  width: 150px;
+}
+
+.dashboard-col-actions {
+  width: 160px;
+}
+
+.dashboard-sticky-room,
+.dashboard-sticky-tenant {
+  position: sticky;
   z-index: 2;
   background: var(--surface);
+}
+
+.dashboard-table th {
+  z-index: 3;
+}
+
+.dashboard-sticky-room {
+  left: 0;
+}
+
+.dashboard-sticky-tenant {
+  left: 116px;
   box-shadow: 1px 0 0 var(--line);
 }
 
-.dashboard-table th:nth-child(1),
-.dashboard-table th:nth-child(2) {
-  z-index: 3;
+.dashboard-table th.dashboard-sticky-room,
+.dashboard-table th.dashboard-sticky-tenant {
+  z-index: 5;
   background: #ecebe4;
 }
 
-.dashboard-table tbody tr:hover td:not([colspan]):nth-child(1),
-.dashboard-table tbody tr:hover td:not([colspan]):nth-child(2) {
+.dashboard-table tbody tr:hover .dashboard-sticky-room,
+.dashboard-table tbody tr:hover .dashboard-sticky-tenant {
   background: #f4f3ed;
 }
 
 .dashboard-tenant-cell,
+.dashboard-transfer-cell,
 .dashboard-note-cell {
   overflow: hidden;
-}
-
-.dashboard-tenant-cell {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
 .dashboard-note-cell {
-  width: 150px;
-  min-width: 150px;
-  max-width: 150px;
+  padding-right: 8px;
 }
 
 .note-preview {
   display: block;
   overflow: hidden;
-  max-width: 150px;
+  width: 100%;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
+.dashboard-actions-cell .toolbar {
+  flex-wrap: nowrap;
+}
+
 .dashboard-table .table-number-input {
-  width: 74px;
-  padding-inline: 6px;
+  width: 68px;
+  height: 28px;
+  padding-inline: 5px;
 }
 
 .muted {

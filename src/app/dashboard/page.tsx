@@ -1289,10 +1289,25 @@ function DashboardContent({ role }: { role: Role }) {
 
       <div className="table-shell dashboard-table-shell">
         <table className="data-table dashboard-table">
+          <colgroup>
+            <col className="dashboard-col-room" />
+            <col className="dashboard-col-tenant" />
+            <col className="dashboard-col-money" />
+            <col className="dashboard-col-fixed-fee" />
+            <col className="dashboard-col-input-fee" />
+            <col className="dashboard-col-water" />
+            <col className="dashboard-col-input-fee" />
+            <col className="dashboard-col-total" />
+            <col className="dashboard-col-status" />
+            <col className="dashboard-col-date" />
+            <col className="dashboard-col-transfer" />
+            <col className="dashboard-col-note" />
+            <col className="dashboard-col-actions" />
+          </colgroup>
           <thead>
             <tr>
-              <th>房號</th>
-              <th>租客</th>
+              <th className="dashboard-sticky-room">房號</th>
+              <th className="dashboard-sticky-tenant">租客</th>
               <th className="number-cell">房租</th>
               <th className="number-cell">清潔/車位</th>
               <th className="number-cell">電費</th>
@@ -1328,11 +1343,16 @@ function DashboardContent({ role }: { role: Role }) {
                     ].filter(Boolean).join(" ") || undefined
                   }
                 >
-                  <td>
+                  <td className="dashboard-sticky-room">
                     <strong>{row.rooms?.room_number ?? "-"}</strong>
                     <div className="muted">{getRoomBuilding(row.rooms) || "未設定棟別"}</div>
                   </td>
-                  <td className="dashboard-tenant-cell">{row.contracts?.tenants?.name ?? (row.payment_status === "vacant" || row.note === "空房" ? "未出租" : "-")}</td>
+                  <td
+                    className="dashboard-sticky-tenant dashboard-tenant-cell"
+                    title={row.contracts?.tenants?.name ?? undefined}
+                  >
+                    {row.contracts?.tenants?.name ?? (row.payment_status === "vacant" || row.note === "空房" ? "未出租" : "-")}
+                  </td>
                   <td className="number-cell">{formatCurrency(row.rent_amount)}</td>
                   <td className="number-cell">{formatCurrency(row.recurring_fee ?? 0)}</td>
                   <td className="number-cell">
@@ -1392,13 +1412,13 @@ function DashboardContent({ role }: { role: Role }) {
                   <td className="number-cell">{formatCurrency(row.total_amount)}</td>
                   <td><PaymentStatusBadge status={row.payment_status} /></td>
                   <td>{formatDate(row.paid_date)}</td>
-                  <td>{row.transfer_last5 || "-"}</td>
+                  <td className="dashboard-transfer-cell">{row.transfer_last5 || "-"}</td>
                   <td className="dashboard-note-cell">
                     <span className="note-preview" title={row.note || undefined}>
                       {row.note || "-"}
                     </span>
                   </td>
-                  <td>
+                  <td className="dashboard-actions-cell">
                     <div className="toolbar">
                       <Link className="icon-button" href={`/rooms/${row.room_id}${currentDashboardParams ? `?return=${encodeURIComponent(`/dashboard?${currentDashboardParams}`)}` : ""}`} title="詳情">
                         <Eye size={17} />
