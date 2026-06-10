@@ -698,7 +698,7 @@ a {
 }
 
 .dashboard-col-input-fee {
-  width: 86px;
+  width: 74px;
 }
 
 .dashboard-col-water {
@@ -785,9 +785,19 @@ a {
 }
 
 .dashboard-table .table-number-input {
-  width: 68px;
-  height: 28px;
-  padding-inline: 5px;
+  width: 56px;
+  min-width: 0;
+  min-height: 0;
+  height: 26px;
+  padding: 2px 4px;
+  font-size: 13px;
+  appearance: textfield;
+}
+
+.dashboard-table .table-number-input::-webkit-outer-spin-button,
+.dashboard-table .table-number-input::-webkit-inner-spin-button {
+  margin: 0;
+  appearance: none;
 }
 
 .muted {
