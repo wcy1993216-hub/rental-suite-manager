@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Eye, RefreshCw } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Pencil, RefreshCw } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
+import { Modal } from "@/components/Modal";
 import { MaintenanceStatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { logAuditAction } from "@/lib/audit";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { ContractWithTenant, MaintenanceRecord, MaintenanceStatus, Room } from "@/lib/types";
 
@@ -19,6 +21,12 @@ const FILTER_OPTIONS: { value: MaintenanceFilter; label: string }[] = [
   { value: "processing", label: "處理中" },
   { value: "completed", label: "已完成" },
   { value: "all", label: "全部" }
+];
+
+const MAINTENANCE_STATUS_OPTIONS: { value: MaintenanceStatus; label: string }[] = [
+  { value: "pending", label: "待處理" },
+  { value: "processing", label: "處理中" },
+  { value: "completed", label: "已完成" }
 ];
 
 interface MaintenanceRow extends MaintenanceRecord {
@@ -69,8 +77,10 @@ function MaintenanceContent() {
   const [processingCount, setProcessingCount] = useState(0);
   const [monthCreatedCount, setMonthCreatedCount] = useState(0);
   const [lastSyncedAt, setLastSyncedAt] = useState("");
+  const [editingRecord, setEditingRecord] = useState<MaintenanceRow | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const loadRecords = useCallback(async () => {
     if (!supabase) return;
@@ -151,6 +161,41 @@ function MaintenanceContent() {
     return `第 ${startItem}-${endItem} 筆，共 ${totalCount} 筆`;
   }, [endItem, startItem, totalCount]);
 
+  async function markCompleted(record: MaintenanceRow) {
+    if (!supabase || record.status === "completed") return;
+    const roomNumber = record.rooms?.room_number ?? "此房間";
+    const confirmed = window.confirm(`確定將 ${roomNumber} 的「${record.title}」標記為已完成？`);
+    if (!confirmed) return;
+
+    setError("");
+    setNotice("");
+    const { error: updateError } = await supabase
+      .from("maintenance_records")
+      .update({ status: "completed" })
+      .eq("id", record.id);
+
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    await logAuditAction(supabase, {
+      action: "update_maintenance_record",
+      target_table: "maintenance_records",
+      target_id: record.id,
+      room_id: record.room_id,
+      detail: {
+        room_number: record.rooms?.room_number ?? null,
+        title: record.title,
+        previous_status: record.status,
+        next_status: "completed"
+      }
+    });
+    setNotice(`已將 ${roomNumber} 的修繕標記為已完成。`);
+    await loadRecords();
+    await loadStats();
+  }
+
   return (
     <>
       <div className="page-header">
@@ -212,6 +257,7 @@ function MaintenanceContent() {
       </div>
 
       {error ? <div className="error-box" style={{ marginBottom: 14 }}>{error}</div> : null}
+      {notice ? <div className="notice" style={{ marginBottom: 14 }}>{notice}</div> : null}
 
       <div className="table-shell">
         <table className="data-table">
@@ -227,7 +273,7 @@ function MaintenanceContent() {
               <th>費用</th>
               <th>負責人員</th>
               <th>備註</th>
-              <th>詳情</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -253,11 +299,21 @@ function MaintenanceContent() {
                   <td>{record.worker || "-"}</td>
                   <td>{record.note || record.description || "-"}</td>
                   <td>
-                    {record.rooms ? (
-                      <Link className="icon-button" href={`/rooms/${record.rooms.id}`} title="房間詳情">
-                        <Eye size={17} />
-                      </Link>
-                    ) : "-"}
+                    <div className="toolbar">
+                      {record.rooms ? (
+                        <Link className="icon-button" href={`/rooms/${record.rooms.id}`} title="房間詳情">
+                          <Eye size={17} />
+                        </Link>
+                      ) : null}
+                      <button className="icon-button" type="button" onClick={() => setEditingRecord(record)} title="編輯修繕">
+                        <Pencil size={17} />
+                      </button>
+                      {record.status !== "completed" ? (
+                        <button className="icon-button" type="button" onClick={() => markCompleted(record)} title="標記完成">
+                          <CheckCircle2 size={17} />
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -278,6 +334,138 @@ function MaintenanceContent() {
           </button>
         </div>
       </div>
+
+      {editingRecord ? (
+        <MaintenanceEditDialog
+          record={editingRecord}
+          onClose={() => setEditingRecord(null)}
+          onSaved={async () => {
+            setEditingRecord(null);
+            setNotice("修繕記錄已更新。");
+            await loadRecords();
+            await loadStats();
+          }}
+        />
+      ) : null}
     </>
+  );
+}
+
+function MaintenanceEditDialog({
+  record,
+  onClose,
+  onSaved
+}: {
+  record: MaintenanceRow;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const supabase = getSupabaseBrowserClient();
+  const [repairDate, setRepairDate] = useState(record.repair_date ?? "");
+  const [title, setTitle] = useState(record.title);
+  const [description, setDescription] = useState(record.description ?? "");
+  const [status, setStatus] = useState<MaintenanceStatus>(record.status);
+  const [cost, setCost] = useState(String(record.cost ?? 0));
+  const [worker, setWorker] = useState(record.worker ?? "");
+  const [note, setNote] = useState(record.note ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase) return;
+
+    setSaving(true);
+    setError("");
+    const payload = {
+      repair_date: repairDate,
+      title,
+      description: description || null,
+      status,
+      cost: Number(cost) || 0,
+      worker: worker || null,
+      note: note || null
+    };
+
+    const { error: updateError } = await supabase
+      .from("maintenance_records")
+      .update(payload)
+      .eq("id", record.id);
+
+    if (updateError) {
+      setError(updateError.message);
+      setSaving(false);
+      return;
+    }
+
+    await logAuditAction(supabase, {
+      action: "update_maintenance_record",
+      target_table: "maintenance_records",
+      target_id: record.id,
+      room_id: record.room_id,
+      detail: {
+        room_number: record.rooms?.room_number ?? null,
+        title,
+        previous_status: record.status,
+        next_status: status
+      }
+    });
+    await onSaved();
+  }
+
+  return (
+    <Modal title="編輯修繕記錄" onClose={onClose}>
+      <form onSubmit={save}>
+        <div className="modal-body">
+          <div className="form-grid">
+            <div className="form-field">
+              <label>房號</label>
+              <input className="input" value={record.rooms?.room_number ?? "-"} disabled />
+            </div>
+            <div className="form-field">
+              <label htmlFor="maintenance-edit-date">日期</label>
+              <input id="maintenance-edit-date" className="input" type="date" value={repairDate} onChange={(event) => setRepairDate(event.target.value)} required />
+            </div>
+            <div className="form-field">
+              <label htmlFor="maintenance-edit-title">修繕項目</label>
+              <input id="maintenance-edit-title" className="input" value={title} onChange={(event) => setTitle(event.target.value)} required />
+            </div>
+            <div className="form-field">
+              <label htmlFor="maintenance-edit-status">狀態</label>
+              <select id="maintenance-edit-status" className="select" value={status} onChange={(event) => setStatus(event.target.value as MaintenanceStatus)}>
+                {MAINTENANCE_STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-field">
+              <label htmlFor="maintenance-edit-cost">費用</label>
+              <input id="maintenance-edit-cost" className="input" type="number" min="0" value={cost} onChange={(event) => setCost(event.target.value)} />
+            </div>
+            <div className="form-field">
+              <label htmlFor="maintenance-edit-worker">負責人員</label>
+              <input id="maintenance-edit-worker" className="input" value={worker} onChange={(event) => setWorker(event.target.value)} />
+            </div>
+            <div className="form-field full">
+              <label htmlFor="maintenance-edit-description">說明</label>
+              <textarea id="maintenance-edit-description" className="textarea" value={description} onChange={(event) => setDescription(event.target.value)} />
+            </div>
+            <div className="form-field full">
+              <label htmlFor="maintenance-edit-note">備註</label>
+              <textarea id="maintenance-edit-note" className="textarea" value={note} onChange={(event) => setNote(event.target.value)} />
+            </div>
+          </div>
+          {error ? <div className="error-box" style={{ marginTop: 14 }}>{error}</div> : null}
+        </div>
+        <div className="modal-footer">
+          <button className="secondary-button" type="button" onClick={onClose} disabled={saving}>取消</button>
+          <button className="button" type="submit" disabled={saving}>
+            {saving ? "儲存中..." : "儲存"}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

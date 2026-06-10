@@ -3,10 +3,11 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, LogOut, Pencil, Plus, RefreshCw, UserRoundCog, Wrench } from "lucide-react";
+import { ArrowLeft, CheckCircle2, LogOut, Pencil, Plus, RefreshCw, UserRoundCog, Wrench } from "lucide-react";
 import { AuthGuard } from "@/components/AuthGuard";
 import { Modal } from "@/components/Modal";
 import { MaintenanceStatusBadge, PaymentMethodBadge, PaymentStatusBadge, RoomStatusBadge } from "@/components/StatusBadge";
+import { logAuditAction } from "@/lib/audit";
 import { getActiveContractBillNote } from "@/lib/billNotes";
 import { formatCurrency, formatDate, todayString } from "@/lib/format";
 import { canEditMaintenance, canManageEverything } from "@/lib/permissions";
@@ -18,6 +19,12 @@ const RENT_PAYMENT_CYCLE_LABELS: Record<RentPaymentCycle, string> = {
   semiannual: "半年繳",
   annual: "年繳"
 };
+
+const MAINTENANCE_STATUS_OPTIONS: { value: MaintenanceStatus; label: string }[] = [
+  { value: "pending", label: "待處理" },
+  { value: "processing", label: "處理中" },
+  { value: "completed", label: "已完成" }
+];
 
 function normalizeContract(item: unknown): ContractWithTenant | null {
   if (!item) return null;
@@ -166,6 +173,7 @@ function RoomDetailContent({ role }: { role: Role }) {
   const [editingTenant, setEditingTenant] = useState(false);
   const [changingTenant, setChangingTenant] = useState(false);
   const [addingMaintenance, setAddingMaintenance] = useState(false);
+  const [editingMaintenance, setEditingMaintenance] = useState<MaintenanceRecord | null>(null);
   const [movingOut, setMovingOut] = useState(false);
 
   function returnToDashboardWithSync() {
@@ -228,6 +236,37 @@ function RoomDetailContent({ role }: { role: Role }) {
   useEffect(() => {
     void loadRoomDetail();
   }, [loadRoomDetail]);
+
+  async function markMaintenanceCompleted(record: MaintenanceRecord) {
+    if (!supabase || !room || record.status === "completed" || !canEditMaintenance(role)) return;
+    const confirmed = window.confirm(`確定將 ${room.room_number} 的「${record.title}」標記為已完成？`);
+    if (!confirmed) return;
+
+    setError("");
+    const { error: updateError } = await supabase
+      .from("maintenance_records")
+      .update({ status: "completed" })
+      .eq("id", record.id);
+
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+
+    await logAuditAction(supabase, {
+      action: "update_maintenance_record",
+      target_table: "maintenance_records",
+      target_id: record.id,
+      room_id: room.id,
+      detail: {
+        room_number: room.room_number,
+        title: record.title,
+        previous_status: record.status,
+        next_status: "completed"
+      }
+    });
+    await loadRoomDetail();
+  }
 
   return (
     <>
@@ -394,15 +433,16 @@ function RoomDetailContent({ role }: { role: Role }) {
                     <th>修繕項目</th>
                     <th>說明</th>
                     <th>狀態</th>
-                    <th className="number-cell">费用</th>
+                    <th className="number-cell">費用</th>
                     <th>負責人員</th>
                     <th>備註</th>
+                    {canEditMaintenance(role) ? <th>操作</th> : null}
                   </tr>
                 </thead>
                 <tbody>
                   {maintenance.length === 0 ? (
                     <tr>
-                      <td colSpan={7}>尚無修繕記錄。</td>
+                      <td colSpan={canEditMaintenance(role) ? 8 : 7}>尚無修繕記錄。</td>
                     </tr>
                   ) : (
                     maintenance.map((record) => (
@@ -414,6 +454,20 @@ function RoomDetailContent({ role }: { role: Role }) {
                         <td className="number-cell">{formatCurrency(record.cost)}</td>
                         <td>{record.worker || "-"}</td>
                         <td>{record.note || "-"}</td>
+                        {canEditMaintenance(role) ? (
+                          <td>
+                            <div className="toolbar">
+                              <button className="icon-button" type="button" onClick={() => setEditingMaintenance(record)} title="編輯修繕">
+                                <Pencil size={17} />
+                              </button>
+                              {record.status !== "completed" ? (
+                                <button className="icon-button" type="button" onClick={() => markMaintenanceCompleted(record)} title="標記完成">
+                                  <CheckCircle2 size={17} />
+                                </button>
+                              ) : null}
+                            </div>
+                          </td>
+                        ) : null}
                       </tr>
                     ))
                   )}
@@ -456,6 +510,19 @@ function RoomDetailContent({ role }: { role: Role }) {
           onClose={() => setAddingMaintenance(false)}
           onSaved={async () => {
             setAddingMaintenance(false);
+            await loadRoomDetail();
+          }}
+        />
+      ) : null}
+
+      {editingMaintenance && room ? (
+        <MaintenanceDialog
+          room={room}
+          activeContractId={editingMaintenance.contract_id ?? activeContract?.id ?? null}
+          record={editingMaintenance}
+          onClose={() => setEditingMaintenance(null)}
+          onSaved={async () => {
+            setEditingMaintenance(null);
             await loadRoomDetail();
           }}
         />
@@ -897,32 +964,34 @@ function TenantContractForm(props: {
 function MaintenanceDialog({
   room,
   activeContractId,
+  record,
   onClose,
   onSaved
 }: {
   room: Room;
   activeContractId: string | null;
+  record?: MaintenanceRecord;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
   const supabase = getSupabaseBrowserClient();
-  const [repairDate, setRepairDate] = useState(todayString());
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [status, setStatus] = useState<MaintenanceStatus>("pending");
-  const [cost, setCost] = useState("");
-  const [worker, setWorker] = useState("");
-  const [note, setNote] = useState("");
+  const [repairDate, setRepairDate] = useState(record?.repair_date ?? todayString());
+  const [title, setTitle] = useState(record?.title ?? "");
+  const [description, setDescription] = useState(record?.description ?? "");
+  const [status, setStatus] = useState<MaintenanceStatus>(record?.status ?? "pending");
+  const [cost, setCost] = useState(record ? String(record.cost ?? 0) : "");
+  const [worker, setWorker] = useState(record?.worker ?? "");
+  const [note, setNote] = useState(record?.note ?? "");
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!supabase) return;
     setError("");
+    setSaving(true);
 
-    const { error: insertError } = await supabase.from("maintenance_records").insert({
-      room_id: room.id,
-      contract_id: activeContractId,
+    const payload = {
       repair_date: repairDate,
       title,
       description: description || null,
@@ -930,18 +999,40 @@ function MaintenanceDialog({
       cost: Number(cost) || 0,
       worker: worker || null,
       note: note || null
-    });
+    };
 
-    if (insertError) {
-      setError(insertError.message);
+    const result = record
+      ? await supabase.from("maintenance_records").update(payload).eq("id", record.id)
+      : await supabase.from("maintenance_records").insert({
+          ...payload,
+          room_id: room.id,
+          contract_id: activeContractId
+        });
+
+    if (result.error) {
+      setError(result.error.message);
+      setSaving(false);
       return;
     }
 
+    await logAuditAction(supabase, {
+      action: "update_maintenance_record",
+      target_table: "maintenance_records",
+      target_id: record?.id ?? null,
+      room_id: room.id,
+      detail: {
+        room_number: room.room_number,
+        title,
+        previous_status: record?.status ?? null,
+        next_status: status,
+        mode: record ? "edit" : "create"
+      }
+    });
     await onSaved();
   }
 
   return (
-    <Modal title="新增修繕記錄" onClose={onClose}>
+    <Modal title={record ? "編輯修繕記錄" : "新增修繕記錄"} onClose={onClose}>
       <form onSubmit={save}>
         <div className="modal-body">
           <div className="form-grid">
@@ -960,14 +1051,16 @@ function MaintenanceDialog({
             <div className="form-field">
               <label htmlFor="repair-status">狀態</label>
               <select id="repair-status" className="select" value={status} onChange={(event) => setStatus(event.target.value as MaintenanceStatus)}>
-                <option value="pending">待處理</option>
-                <option value="processing">處理中</option>
-                <option value="completed">已完成</option>
+                {MAINTENANCE_STATUS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="form-field">
-              <label htmlFor="repair-cost">费用</label>
-              <input id="repair-cost" className="input" type="number" value={cost} onChange={(event) => setCost(event.target.value)} />
+              <label htmlFor="repair-cost">費用</label>
+              <input id="repair-cost" className="input" type="number" min="0" value={cost} onChange={(event) => setCost(event.target.value)} />
             </div>
             <div className="form-field">
               <label htmlFor="repair-worker">負責人員</label>
@@ -985,10 +1078,10 @@ function MaintenanceDialog({
           {error ? <div className="error-box" style={{ marginTop: 14 }}>{error}</div> : null}
         </div>
         <div className="modal-footer">
-          <button className="secondary-button" type="button" onClick={onClose}>取消</button>
-          <button className="button" type="submit">
+          <button className="secondary-button" type="button" onClick={onClose} disabled={saving}>取消</button>
+          <button className="button" type="submit" disabled={saving}>
             <Wrench size={17} />
-            新增
+            {saving ? "儲存中..." : record ? "儲存" : "新增"}
           </button>
         </div>
       </form>

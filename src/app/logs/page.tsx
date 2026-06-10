@@ -17,6 +17,7 @@ const ACTION_LABELS: Record<string, string> = {
   generate_monthly_bills: "產生本月帳單",
   clear_monthly_bills: "清除本月帳單",
   update_room_bill: "更新房間帳單",
+  update_maintenance_record: "更新修繕記錄",
   update_electricity_fee: "修改電費",
   update_misc_fee: "修改雜支",
   confirm_cash_payment: "確認現金收款",
